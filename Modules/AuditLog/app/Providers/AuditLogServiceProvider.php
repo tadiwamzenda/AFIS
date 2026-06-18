@@ -2,45 +2,26 @@
 
 namespace Modules\AuditLog\Providers;
 
-use Nwidart\Modules\Support\ModuleServiceProvider;
-use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Support\ServiceProvider;
+use Modules\AuditLog\Services\AuditLogService;
+use Modules\Core\Contracts\AuditLogInterface;
 
-class AuditLogServiceProvider extends ModuleServiceProvider
+class AuditLogServiceProvider extends ServiceProvider
 {
-    /**
-     * The name of the module.
-     */
-    protected string $name = 'AuditLog';
+    protected string $moduleName      = 'AuditLog';
+    protected string $moduleNameLower = 'auditlog';
 
-    /**
-     * The lowercase version of the module name.
-     */
-    protected string $nameLower = 'auditlog';
+    public function boot(): void
+    {
+        $this->loadMigrationsFrom(module_path($this->moduleName, 'database/migrations'));
+    }
 
-    /**
-     * Command classes to register.
-     *
-     * @var string[]
-     */
-    // protected array $commands = [];
+    public function register(): void
+    {
+        $this->app->register(EventServiceProvider::class);
+        $this->app->register(RouteServiceProvider::class);
 
-    /**
-     * Provider classes to register.
-     *
-     * @var string[]
-     */
-    protected array $providers = [
-        EventServiceProvider::class,
-        RouteServiceProvider::class,
-    ];
-
-    /**
-     * Define module schedules.
-     * 
-     * @param $schedule
-     */
-    // protected function configureSchedules(Schedule $schedule): void
-    // {
-    //     $schedule->command('inspire')->hourly();
-    // }
+        // Bind the interface as a singleton — stateless service
+        $this->app->singleton(AuditLogInterface::class, AuditLogService::class);
+    }
 }
