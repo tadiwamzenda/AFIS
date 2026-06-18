@@ -1,0 +1,11 @@
+{
+    "name": "AdmmReports",
+    "alias": "admmreports",
+    "description": "",
+    "keywords": [],
+    "priority": 0,
+    "providers": [
+        "Modules\\AdmmReports\\Providers\\AdmmReportsServiceProvider"
+    ],
+    "files": []
+}

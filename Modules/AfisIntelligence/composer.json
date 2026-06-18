@@ -1,0 +1,30 @@
+{
+    "name": "nwidart/afisintelligence",
+    "description": "",
+    "authors": [
+        {
+            "name": "Nicolas Widart",
+            "email": "n.widart@gmail.com"
+        }
+    ],
+    "extra": {
+        "laravel": {
+            "providers": [],
+            "aliases": {
+
+            }
+        }
+    },
+    "autoload": {
+        "psr-4": {
+            "Modules\\AfisIntelligence\\": "app/",
+            "Modules\\AfisIntelligence\\Database\\Factories\\": "database/factories/",
+            "Modules\\AfisIntelligence\\Database\\Seeders\\": "database/seeders/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Modules\\AfisIntelligence\\Tests\\": "tests/"
+        }
+    }
+}

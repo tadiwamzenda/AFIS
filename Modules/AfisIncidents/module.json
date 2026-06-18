@@ -1,0 +1,11 @@
+{
+    "name": "AfisIncidents",
+    "alias": "afisincidents",
+    "description": "",
+    "keywords": [],
+    "priority": 0,
+    "providers": [
+        "Modules\\AfisIncidents\\Providers\\AfisIncidentsServiceProvider"
+    ],
+    "files": []
+}

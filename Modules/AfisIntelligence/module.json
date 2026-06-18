@@ -1,0 +1,11 @@
+{
+    "name": "AfisIntelligence",
+    "alias": "afisintelligence",
+    "description": "",
+    "keywords": [],
+    "priority": 0,
+    "providers": [
+        "Modules\\AfisIntelligence\\Providers\\AfisIntelligenceServiceProvider"
+    ],
+    "files": []
+}

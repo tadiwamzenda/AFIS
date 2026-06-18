@@ -1,0 +1,18 @@
+{
+    "Core": true,
+    "Auth": true,
+    "NavixyClient": true,
+    "AuditLog": true,
+    "ExportEngine": true,
+    "Notifications": true,
+    "AdmmInventory": true,
+    "AdmmWorkflows": true,
+    "AdmmDocuments": true,
+    "AdmmReports": true,
+    "AdmmDashboard": true,
+    "AfisPipeline": true,
+    "AfisEngine": true,
+    "AfisPortal": true,
+    "AfisIncidents": true,
+    "AfisIntelligence": true
+}

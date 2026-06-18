@@ -1,0 +1,11 @@
+{
+    "name": "AdmmInventory",
+    "alias": "admminventory",
+    "description": "",
+    "keywords": [],
+    "priority": 0,
+    "providers": [
+        "Modules\\AdmmInventory\\Providers\\AdmmInventoryServiceProvider"
+    ],
+    "files": []
+}

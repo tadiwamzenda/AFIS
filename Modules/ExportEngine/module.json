@@ -1,0 +1,11 @@
+{
+    "name": "ExportEngine",
+    "alias": "exportengine",
+    "description": "",
+    "keywords": [],
+    "priority": 0,
+    "providers": [
+        "Modules\\ExportEngine\\Providers\\ExportEngineServiceProvider"
+    ],
+    "files": []
+}

@@ -1,0 +1,11 @@
+{
+    "name": "AdmmDashboard",
+    "alias": "admmdashboard",
+    "description": "",
+    "keywords": [],
+    "priority": 0,
+    "providers": [
+        "Modules\\AdmmDashboard\\Providers\\AdmmDashboardServiceProvider"
+    ],
+    "files": []
+}

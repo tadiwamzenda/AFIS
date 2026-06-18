@@ -1,0 +1,11 @@
+{
+    "name": "AfisPipeline",
+    "alias": "afispipeline",
+    "description": "",
+    "keywords": [],
+    "priority": 0,
+    "providers": [
+        "Modules\\AfisPipeline\\Providers\\AfisPipelineServiceProvider"
+    ],
+    "files": []
+}

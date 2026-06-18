@@ -1,0 +1,11 @@
+{
+    "name": "AdmmDocuments",
+    "alias": "admmdocuments",
+    "description": "",
+    "keywords": [],
+    "priority": 0,
+    "providers": [
+        "Modules\\AdmmDocuments\\Providers\\AdmmDocumentsServiceProvider"
+    ],
+    "files": []
+}

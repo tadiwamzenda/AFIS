@@ -1,0 +1,11 @@
+{
+    "name": "AdmmWorkflows",
+    "alias": "admmworkflows",
+    "description": "",
+    "keywords": [],
+    "priority": 0,
+    "providers": [
+        "Modules\\AdmmWorkflows\\Providers\\AdmmWorkflowsServiceProvider"
+    ],
+    "files": []
+}

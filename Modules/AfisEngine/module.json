@@ -1,0 +1,11 @@
+{
+    "name": "AfisEngine",
+    "alias": "afisengine",
+    "description": "",
+    "keywords": [],
+    "priority": 0,
+    "providers": [
+        "Modules\\AfisEngine\\Providers\\AfisEngineServiceProvider"
+    ],
+    "files": []
+}

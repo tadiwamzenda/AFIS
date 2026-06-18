@@ -1,0 +1,30 @@
+{
+    "name": "nwidart/admmreports",
+    "description": "",
+    "authors": [
+        {
+            "name": "Nicolas Widart",
+            "email": "n.widart@gmail.com"
+        }
+    ],
+    "extra": {
+        "laravel": {
+            "providers": [],
+            "aliases": {
+
+            }
+        }
+    },
+    "autoload": {
+        "psr-4": {
+            "Modules\\AdmmReports\\": "app/",
+            "Modules\\AdmmReports\\Database\\Factories\\": "database/factories/",
+            "Modules\\AdmmReports\\Database\\Seeders\\": "database/seeders/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Modules\\AdmmReports\\Tests\\": "tests/"
+        }
+    }
+}

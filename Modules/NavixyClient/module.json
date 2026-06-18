@@ -1,0 +1,11 @@
+{
+    "name": "NavixyClient",
+    "alias": "navixyclient",
+    "description": "",
+    "keywords": [],
+    "priority": 0,
+    "providers": [
+        "Modules\\NavixyClient\\Providers\\NavixyClientServiceProvider"
+    ],
+    "files": []
+}

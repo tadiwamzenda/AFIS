@@ -1,0 +1,11 @@
+{
+    "name": "AfisPortal",
+    "alias": "afisportal",
+    "description": "",
+    "keywords": [],
+    "priority": 0,
+    "providers": [
+        "Modules\\AfisPortal\\Providers\\AfisPortalServiceProvider"
+    ],
+    "files": []
+}
