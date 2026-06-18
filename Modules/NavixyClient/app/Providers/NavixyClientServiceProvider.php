@@ -2,45 +2,34 @@
 
 namespace Modules\NavixyClient\Providers;
 
-use Nwidart\Modules\Support\ModuleServiceProvider;
-use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Support\ServiceProvider;
+use Modules\Core\Contracts\NavixyClientInterface;
+use Modules\NavixyClient\Services\NavixyClientService;
 
-class NavixyClientServiceProvider extends ModuleServiceProvider
+class NavixyClientServiceProvider extends ServiceProvider
 {
-    /**
-     * The name of the module.
-     */
-    protected string $name = 'NavixyClient';
+    protected string $moduleName      = 'NavixyClient';
+    protected string $moduleNameLower = 'navixyclient';
 
-    /**
-     * The lowercase version of the module name.
-     */
-    protected string $nameLower = 'navixyclient';
+    public function boot(): void
+    {
+        $this->registerConfig();
+    }
 
-    /**
-     * Command classes to register.
-     *
-     * @var string[]
-     */
-    // protected array $commands = [];
+    public function register(): void
+    {
+        $this->app->register(EventServiceProvider::class);
+        $this->app->register(RouteServiceProvider::class);
 
-    /**
-     * Provider classes to register.
-     *
-     * @var string[]
-     */
-    protected array $providers = [
-        EventServiceProvider::class,
-        RouteServiceProvider::class,
-    ];
+        // Bind the interface — request-scoped so hash is always fresh per request
+        $this->app->scoped(NavixyClientInterface::class, NavixyClientService::class);
+    }
 
-    /**
-     * Define module schedules.
-     * 
-     * @param $schedule
-     */
-    // protected function configureSchedules(Schedule $schedule): void
-    // {
-    //     $schedule->command('inspire')->hourly();
-    // }
+    protected function registerConfig(): void
+    {
+        $this->mergeConfigFrom(
+            module_path($this->moduleName, 'config/config.php'),
+            $this->moduleNameLower
+        );
+    }
 }
