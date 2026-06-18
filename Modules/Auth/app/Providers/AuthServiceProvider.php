@@ -2,45 +2,45 @@
 
 namespace Modules\Auth\Providers;
 
-use Nwidart\Modules\Support\ModuleServiceProvider;
-use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Support\ServiceProvider;
+use Illuminate\Routing\Router;
+use Modules\Auth\Http\Middleware\NavixyHashRefreshMiddleware;
 
-class AuthServiceProvider extends ModuleServiceProvider
+class AuthServiceProvider extends ServiceProvider
 {
-    /**
-     * The name of the module.
-     */
-    protected string $name = 'Auth';
+    protected string $moduleName      = 'Auth';
+    protected string $moduleNameLower = 'auth';
 
-    /**
-     * The lowercase version of the module name.
-     */
-    protected string $nameLower = 'auth';
+    public function boot(): void
+    {
+        $this->registerConfig();
+        $this->registerViews();
 
-    /**
-     * Command classes to register.
-     *
-     * @var string[]
-     */
-    // protected array $commands = [];
+        // Register hash refresh middleware on the web group
+        $router = $this->app->make(Router::class);
+        $router->pushMiddlewareToGroup('web', NavixyHashRefreshMiddleware::class);
+        $router->aliasMiddleware('navixy.hash', NavixyHashRefreshMiddleware::class);
+    }
 
-    /**
-     * Provider classes to register.
-     *
-     * @var string[]
-     */
-    protected array $providers = [
-        EventServiceProvider::class,
-        RouteServiceProvider::class,
-    ];
+    public function register(): void
+    {
+        $this->app->register(EventServiceProvider::class);
+        $this->app->register(RouteServiceProvider::class);
+    }
 
-    /**
-     * Define module schedules.
-     * 
-     * @param $schedule
-     */
-    // protected function configureSchedules(Schedule $schedule): void
-    // {
-    //     $schedule->command('inspire')->hourly();
-    // }
+    protected function registerConfig(): void
+    {
+        $this->mergeConfigFrom(
+            module_path($this->moduleName, 'config/config.php'),
+            'auth-module'
+        );
+    }
+
+    protected function registerViews(): void
+    {
+        $this->loadViewsFrom(
+            module_path($this->moduleName, 'resources/views'),
+            $this->moduleNameLower
+        );
+    }
 }
