@@ -12,7 +12,7 @@ class NavixyAuthService
 
     public function __construct()
     {
-        $this->baseUrl = rtrim(config('auth-module.navixy_base_url', 'https://api.navixy.com/v2'), '/');
+        $this->baseUrl = rtrim(config('auth-module.navixy_base_url', 'https://api.us.navixy.com/v2'), '/');
     }
 
     /**

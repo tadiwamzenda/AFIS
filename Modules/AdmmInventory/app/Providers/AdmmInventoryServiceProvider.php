@@ -13,6 +13,9 @@ class AdmmInventoryServiceProvider extends ServiceProvider
     {
         $this->registerViews();
         $this->loadMigrationsFrom(module_path($this->moduleName, 'database/migrations'));
+
+        \Livewire\Livewire::component('admm-sim-card-index', \Modules\AdmmInventory\Livewire\SimCards\SimCardIndex::class);
+        \Livewire\Livewire::component('admm-sim-card-form',  \Modules\AdmmInventory\Livewire\SimCards\SimCardForm::class);
     }
 
     public function register(): void

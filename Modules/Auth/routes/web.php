@@ -14,7 +14,7 @@ Route::middleware('guest')->group(function () {
 Route::middleware('auth')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
 
-    // Temporary placeholders — replaced when portal modules are built
-    Route::get('/admin/dashboard', fn() => 'Admin dashboard — coming soon')->name('admin.dashboard');
-    Route::get('/client/dashboard', fn() => 'Client dashboard — coming soon')->name('client.dashboard');
+    Route::get('/admin/dashboard', function () {
+        return redirect()->route('admin.admm.sim-cards.index');
+    })->name('admin.dashboard');
 });

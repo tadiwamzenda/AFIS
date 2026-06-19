@@ -39,7 +39,7 @@ class AuthController extends Controller
         }
 
         // Step 2 — match to a local user record
-        $user = User::where('navixy_user_id', $navixy['user_id'])->first();
+        $user = User::where('email', $request->email)->first();
 
         if (!$user) {
             return back()
@@ -57,11 +57,11 @@ class AuthController extends Controller
         Auth::login($user, $request->boolean('remember'));
 
         session([
-            'navixy_hash'         => $navixy['hash'],
-            'navixy_user_id'      => $navixy['user_id'],
-            'navixy_account_id'   => $navixy['account_id'],
-            'hash_acquired_at'    => now()->timestamp,
-            'navixy_email'        => $request->email,
+            'navixy_hash'       => $navixy['hash'],
+            'navixy_user_id'    => $user->navixy_user_id,
+            'navixy_account_id' => $user->navixy_account_id,
+            'hash_acquired_at'  => now()->timestamp,
+            'navixy_email'      => $request->email,
             'navixy_password_enc' => encrypt($request->password),
         ]);
 
