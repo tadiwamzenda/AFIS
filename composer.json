@@ -27,13 +27,28 @@
         "pestphp/pest-plugin-laravel": "^4.1"
     },
     "autoload": {
-        "psr-4": {
-            "App\\": "app/",
-            "Database\\Factories\\": "database/factories/",
-            "Database\\Seeders\\": "database/seeders/"
-           
-        }
-    },
+    "psr-4": {
+        "App\\": "app/",
+        "Database\\Factories\\": "database/factories/",
+        "Database\\Seeders\\": "database/seeders/",
+        "Modules\\Core\\": "Modules/Core/app/",
+        "Modules\\Auth\\": "Modules/Auth/app/",
+        "Modules\\NavixyClient\\": "Modules/NavixyClient/app/",
+        "Modules\\AuditLog\\": "Modules/AuditLog/app/",
+        "Modules\\AdmmInventory\\": "Modules/AdmmInventory/app/",
+        "Modules\\AdmmWorkflows\\": "Modules/AdmmWorkflows/app/",
+        "Modules\\AdmmDocuments\\": "Modules/AdmmDocuments/app/",
+        "Modules\\AdmmReports\\": "Modules/AdmmReports/app/",
+        "Modules\\AdmmDashboard\\": "Modules/AdmmDashboard/app/",
+        "Modules\\AfisPipeline\\": "Modules/AfisPipeline/app/",
+        "Modules\\AfisEngine\\": "Modules/AfisEngine/app/",
+        "Modules\\AfisPortal\\": "Modules/AfisPortal/app/",
+        "Modules\\AfisIncidents\\": "Modules/AfisIncidents/app/",
+        "Modules\\AfisIntelligence\\": "Modules/AfisIntelligence/app/",
+        "Modules\\ExportEngine\\": "Modules/ExportEngine/app/",
+        "Modules\\Notifications\\": "Modules/Notifications/app/"
+    }
+},
     "autoload-dev": {
         "psr-4": {
             "Tests\\": "tests/"
