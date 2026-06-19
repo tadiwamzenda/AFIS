@@ -16,6 +16,8 @@ class AdmmInventoryServiceProvider extends ServiceProvider
 
         \Livewire\Livewire::component('admm-sim-card-index', \Modules\AdmmInventory\Livewire\SimCards\SimCardIndex::class);
         \Livewire\Livewire::component('admm-sim-card-form',  \Modules\AdmmInventory\Livewire\SimCards\SimCardForm::class);
+        \Livewire\Livewire::component('admm-client-index', \Modules\AdmmInventory\Livewire\Clients\ClientIndex::class);
+        \Livewire\Livewire::component('admm-client-form',  \Modules\AdmmInventory\Livewire\Clients\ClientForm::class);
     }
 
     public function register(): void
