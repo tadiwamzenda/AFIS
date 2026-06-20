@@ -20,6 +20,8 @@ class AdmmInventoryServiceProvider extends ServiceProvider
         \Livewire\Livewire::component('admm-client-form',  \Modules\AdmmInventory\Livewire\Clients\ClientForm::class);
         \Livewire\Livewire::component('admm-gps-device-index', \Modules\AdmmInventory\Livewire\GpsDevices\GpsDeviceIndex::class);
         \Livewire\Livewire::component('admm-gps-device-form',  \Modules\AdmmInventory\Livewire\GpsDevices\GpsDeviceForm::class);
+        \Livewire\Livewire::component('admm-accessory-index', \Modules\AdmmInventory\Livewire\Accessories\AccessoryIndex::class);
+        \Livewire\Livewire::component('admm-accessory-form',  \Modules\AdmmInventory\Livewire\Accessories\AccessoryForm::class);
     }
 
     public function register(): void

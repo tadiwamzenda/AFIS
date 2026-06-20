@@ -5,6 +5,7 @@ use Modules\AdmmInventory\Http\Controllers\AdmmInventoryController;
 use Modules\AdmmInventory\Http\Controllers\SimCardController;
 use Modules\AdmmInventory\Http\Controllers\ClientController;
 use Modules\AdmmInventory\Http\Controllers\GpsDeviceController;
+use Modules\AdmmInventory\Http\Controllers\AccessoryController;
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::resource('admminventories', AdmmInventoryController::class)->names('admminventory');
@@ -29,6 +30,12 @@ Route::middleware(['auth'])->prefix('admin/admm')->name('admin.admm.')->group(fu
         Route::get('/',              [GpsDeviceController::class, 'index'])->name('index');
         Route::get('/create',        [GpsDeviceController::class, 'create'])->name('create');
         Route::get('/{device}/edit', [GpsDeviceController::class, 'edit'])->name('edit');
+    });
+    //Accessories
+    Route::prefix('accessories')->name('accessories.')->group(function () {
+        Route::get('/',                   [AccessoryController::class, 'index'])->name('index');
+        Route::get('/create',             [AccessoryController::class, 'create'])->name('create');
+        Route::get('/{accessory}/edit',   [AccessoryController::class, 'edit'])->name('edit');
     });
 
 });
