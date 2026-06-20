@@ -14,7 +14,4 @@ Route::middleware('guest')->group(function () {
 Route::middleware('auth')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
 
-    Route::get('/admin/dashboard', function () {
-        return redirect()->route('admin.admm.sim-cards.index');
-    })->name('admin.dashboard');
 });

@@ -1,5 +1,7 @@
-<x-admmdashboard::layouts.master>
-    <h1>Hello World</h1>
+@extends('core::layouts.admin')
+@section('title', 'Dashboard')
+@section('page-title', 'Dashboard')
 
-    <p>Module: {!! config('admmdashboard.name') !!}</p>
-</x-admmdashboard::layouts.master>
+@section('content')
+    <livewire:admm-dashboard />
+@endsection

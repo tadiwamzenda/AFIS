@@ -1,8 +1,8 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
-use Modules\AdmmDashboard\Http\Controllers\AdmmDashboardController;
+use Modules\AdmmDashboard\Http\Controllers\DashboardController;
 
-Route::middleware(['auth', 'verified'])->group(function () {
-    Route::resource('admmdashboards', AdmmDashboardController::class)->names('admmdashboard');
+Route::middleware('auth')->group(function () {
+    Route::get('/admin/dashboard', [DashboardController::class, 'index'])->name('admin.dashboard');
 });
