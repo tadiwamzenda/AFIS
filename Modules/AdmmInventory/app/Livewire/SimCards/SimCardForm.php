@@ -7,10 +7,12 @@ use Modules\AdmmInventory\Models\Client;
 use Modules\AdmmInventory\Models\SimCard;
 use Modules\Core\Contracts\AuditLogInterface;
 
+
 class SimCardForm extends Component
 {
     public ?SimCard $simCard = null;
     public bool $isEditing   = false;
+    public string $batch_code = '';
 
     // Form fields
     public string  $iccid               = '';
@@ -33,6 +35,7 @@ class SimCardForm extends Component
             'iccid'               => ['required', 'string', 'max:22', $iccidUnique],
             'msisdn'              => ['nullable', 'string', 'max:20'],
             'network_provider'    => ['required', 'string', 'max:100'],
+            'batch_code'          => ['nullable', 'string', 'max:100'],
             'bundle_type'         => ['nullable', 'string', 'max:100'],
             'bundle_renewal_date' => ['nullable', 'date'],
             'status'              => ['required', 'in:active_client,active_internal,unassigned,inactive,suspended,deactivated,lost'],
@@ -50,6 +53,7 @@ class SimCardForm extends Component
             $this->iccid              = $simCard->iccid;
             $this->msisdn             = $simCard->msisdn ?? '';
             $this->network_provider   = $simCard->network_provider;
+            $this->batch_code         = $simCard->batch_code ?? '';
             $this->bundle_type        = $simCard->bundle_type ?? '';
             $this->bundle_renewal_date = $simCard->bundle_renewal_date?->format('Y-m-d') ?? '';
             $this->status             = $simCard->status;

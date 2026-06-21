@@ -34,6 +34,7 @@
                     <th class="text-left px-4 py-3 font-medium text-gray-600">ICCID</th>
                     <th class="text-left px-4 py-3 font-medium text-gray-600">MSISDN</th>
                     <th class="text-left px-4 py-3 font-medium text-gray-600">Provider</th>
+                    <th class="text-left px-4 py-3 font-medium text-gray-600">Batch</th>
                     <th class="text-left px-4 py-3 font-medium text-gray-600">Status</th>
                     <th class="text-left px-4 py-3 font-medium text-gray-600">Location</th>
                     <th class="text-left px-4 py-3 font-medium text-gray-600">Client</th>
@@ -48,6 +49,7 @@
                             <td class="px-4 py-3 font-mono text-xs text-gray-700">{{ $sim->iccid }}</td>
                             <td class="px-4 py-3 text-gray-600">{{ $sim->msisdn ?? '—' }}</td>
                             <td class="px-4 py-3 text-gray-600">{{ $sim->network_provider }}</td>
+                            <td class="px-4 py-3 text-gray-500 text-xs font-mono">{{ $sim->batch_code ?? '—' }}</td>
                             <td class="px-4 py-3">
                                 @php
                                     $statusColors = [
@@ -90,7 +92,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="8" class="px-4 py-10 text-center text-gray-400 text-sm">
+                            <td colspan="9" class="px-4 py-10 text-center text-gray-400 text-sm">
                                 No SIM cards found.
                             </td>
                         </tr>

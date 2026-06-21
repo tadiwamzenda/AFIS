@@ -23,9 +23,9 @@ class SimCard extends Model
     const CONTEXT_NONE     = 'unallocated';
 
     protected $fillable = [
-        'iccid', 'msisdn', 'network_provider', 'bundle_type',
-        'bundle_renewal_date', 'status', 'location_context',
-        'client_id', 'navixy_tracker_id', 'notes',
+    'iccid', 'msisdn', 'network_provider', 'batch_code', 'bundle_type',
+    'bundle_renewal_date', 'status', 'location_context',
+    'client_id', 'navixy_tracker_id', 'notes',
     ];
 
     protected $casts = [

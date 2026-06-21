@@ -2,45 +2,40 @@
 
 namespace Modules\AdmmDocuments\Providers;
 
-use Nwidart\Modules\Support\ModuleServiceProvider;
-use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Support\ServiceProvider;
+use Livewire\Livewire;
+use Modules\AdmmDocuments\Livewire\SimCardImport;
 
-class AdmmDocumentsServiceProvider extends ModuleServiceProvider
+class AdmmDocumentsServiceProvider extends ServiceProvider
 {
-    /**
-     * The name of the module.
-     */
-    protected string $name = 'AdmmDocuments';
+    protected string $moduleName      = 'AdmmDocuments';
+    protected string $moduleNameLower = 'admmdocuments';
 
-    /**
-     * The lowercase version of the module name.
-     */
-    protected string $nameLower = 'admmdocuments';
+    public function boot(): void
+    {
+        $this->registerViews();
 
-    /**
-     * Command classes to register.
-     *
-     * @var string[]
-     */
-    // protected array $commands = [];
+        $this->loadMigrationsFrom(
+            module_path($this->moduleName, 'database/migrations')
+        );
 
-    /**
-     * Provider classes to register.
-     *
-     * @var string[]
-     */
-    protected array $providers = [
-        EventServiceProvider::class,
-        RouteServiceProvider::class,
-    ];
+        Livewire::component(
+            'admm-sim-import',
+            SimCardImport::class
+        );
+    }
 
-    /**
-     * Define module schedules.
-     * 
-     * @param $schedule
-     */
-    // protected function configureSchedules(Schedule $schedule): void
-    // {
-    //     $schedule->command('inspire')->hourly();
-    // }
+    public function register(): void
+    {
+        $this->app->register(EventServiceProvider::class);
+        $this->app->register(RouteServiceProvider::class);
+    }
+
+    protected function registerViews(): void
+    {
+        $this->loadViewsFrom(
+            module_path($this->moduleName, 'resources/views'),
+            $this->moduleNameLower
+        );
+    }
 }
