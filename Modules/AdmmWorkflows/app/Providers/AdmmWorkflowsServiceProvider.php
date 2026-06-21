@@ -2,45 +2,33 @@
 
 namespace Modules\AdmmWorkflows\Providers;
 
-use Nwidart\Modules\Support\ModuleServiceProvider;
-use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Support\ServiceProvider;
 
-class AdmmWorkflowsServiceProvider extends ModuleServiceProvider
+class AdmmWorkflowsServiceProvider extends ServiceProvider
 {
-    /**
-     * The name of the module.
-     */
-    protected string $name = 'AdmmWorkflows';
+    protected string $moduleName      = 'AdmmWorkflows';
+    protected string $moduleNameLower = 'admmworkflows';
 
-    /**
-     * The lowercase version of the module name.
-     */
-    protected string $nameLower = 'admmworkflows';
+    public function boot(): void
+    {
+        $this->registerViews();
 
-    /**
-     * Command classes to register.
-     *
-     * @var string[]
-     */
-    // protected array $commands = [];
+        \Livewire\Livewire::component('admm-sim-swap',      \Modules\AdmmWorkflows\Livewire\SimSwapWizard::class);
+        \Livewire\Livewire::component('admm-device-install',\Modules\AdmmWorkflows\Livewire\DeviceInstallWizard::class);
+        \Livewire\Livewire::component('admm-device-remove', \Modules\AdmmWorkflows\Livewire\DeviceRemoveWizard::class);
+    }
 
-    /**
-     * Provider classes to register.
-     *
-     * @var string[]
-     */
-    protected array $providers = [
-        EventServiceProvider::class,
-        RouteServiceProvider::class,
-    ];
+    public function register(): void
+    {
+        $this->app->register(EventServiceProvider::class);
+        $this->app->register(RouteServiceProvider::class);
+    }
 
-    /**
-     * Define module schedules.
-     * 
-     * @param $schedule
-     */
-    // protected function configureSchedules(Schedule $schedule): void
-    // {
-    //     $schedule->command('inspire')->hourly();
-    // }
+    protected function registerViews(): void
+    {
+        $this->loadViewsFrom(
+            module_path($this->moduleName, 'resources/views'),
+            $this->moduleNameLower
+        );
+    }
 }

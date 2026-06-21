@@ -18,6 +18,10 @@
                 <h1 class="text-xl font-semibold">
                     @yield('page-title', 'Dashboard')
                 </h1>
+                 <a href="{{ route('admin.admm.workflows.hub') }}"
+                    class="text-sm text-blue-600 hover:text-blue-800">
+                    Workflows
+                </a>
             </div>
 
             <div>
