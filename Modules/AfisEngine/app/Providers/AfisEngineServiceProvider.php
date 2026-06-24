@@ -2,45 +2,56 @@
 
 namespace Modules\AfisEngine\Providers;
 
-use Nwidart\Modules\Support\ModuleServiceProvider;
-use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Support\ServiceProvider;
+use Modules\AfisEngine\Services\AfisEngineService;
+use Modules\AfisEngine\Services\Engines\ClaudeEngine;
+use Modules\AfisEngine\Services\Engines\OpenAiEngine;
+use Modules\Core\Contracts\AiEngineInterface;
 
-class AfisEngineServiceProvider extends ModuleServiceProvider
+class AfisEngineServiceProvider extends ServiceProvider
 {
-    /**
-     * The name of the module.
-     */
-    protected string $name = 'AfisEngine';
+    protected string $moduleName      = 'AfisEngine';
+    protected string $moduleNameLower = 'afisengine';
 
-    /**
-     * The lowercase version of the module name.
-     */
-    protected string $nameLower = 'afisengine';
+    public function boot(): void
+    {
+        $this->registerConfig();
+        $this->registerViews();
+        $this->loadMigrationsFrom(module_path($this->moduleName, 'database/migrations'));
+    }
 
-    /**
-     * Command classes to register.
-     *
-     * @var string[]
-     */
-    // protected array $commands = [];
+    public function register(): void
+    {
+        $this->app->register(EventServiceProvider::class);
+        $this->app->register(RouteServiceProvider::class);
 
-    /**
-     * Provider classes to register.
-     *
-     * @var string[]
-     */
-    protected array $providers = [
-        EventServiceProvider::class,
-        RouteServiceProvider::class,
-    ];
+        // Bind engines as singletons
+        $this->app->singleton(ClaudeEngine::class);
+        $this->app->singleton(OpenAiEngine::class);
 
-    /**
-     * Define module schedules.
-     * 
-     * @param $schedule
-     */
-    // protected function configureSchedules(Schedule $schedule): void
-    // {
-    //     $schedule->command('inspire')->hourly();
-    // }
+        // Bind AfisEngineService as the AiEngineInterface implementation
+        $this->app->singleton(AiEngineInterface::class, AfisEngineService::class);
+        $this->app->singleton(AfisEngineService::class, function ($app) {
+            return new AfisEngineService(
+                $app->make(ClaudeEngine::class),
+                $app->make(OpenAiEngine::class),
+            );
+        });
+    }
+
+    protected function registerConfig(): void
+    {
+        $this->mergeConfigFrom(
+            module_path($this->moduleName, 'config/config.php'),
+            'afisengine'
+        );
+    }
+
+    protected function registerViews(): void
+    {
+        $this->loadViewsFrom(
+            module_path($this->moduleName, 'resources/views'),
+            $this->moduleNameLower
+        );
+    }
 }
