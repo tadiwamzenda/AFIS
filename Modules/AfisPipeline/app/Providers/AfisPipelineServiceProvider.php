@@ -2,45 +2,43 @@
 
 namespace Modules\AfisPipeline\Providers;
 
-use Nwidart\Modules\Support\ModuleServiceProvider;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Support\ServiceProvider;
+use Modules\AfisPipeline\Console\SyncFleetCommand;
 
-class AfisPipelineServiceProvider extends ModuleServiceProvider
+class AfisPipelineServiceProvider extends ServiceProvider
 {
-    /**
-     * The name of the module.
-     */
-    protected string $name = 'AfisPipeline';
+    protected string $moduleName      = 'AfisPipeline';
+    protected string $moduleNameLower = 'afispipeline';
 
-    /**
-     * The lowercase version of the module name.
-     */
-    protected string $nameLower = 'afispipeline';
+    public function boot(): void
+    {
+        $this->registerViews();
+        $this->registerConfig();
+        $this->loadMigrationsFrom(module_path($this->moduleName, 'database/migrations'));
+        $this->commands([SyncFleetCommand::class]);
 
-    /**
-     * Command classes to register.
-     *
-     * @var string[]
-     */
-    // protected array $commands = [];
+        // Register scheduler — runs every 15 minutes in production
+        $this->callAfterResolving(Schedule::class, function (Schedule $schedule) {
+            $schedule->command('afis:sync-fleet')->everyFifteenMinutes();
+        });
 
-    /**
-     * Provider classes to register.
-     *
-     * @var string[]
-     */
-    protected array $providers = [
-        EventServiceProvider::class,
-        RouteServiceProvider::class,
-    ];
+        \Livewire\Livewire::component('afis-pipeline-dashboard', \Modules\AfisPipeline\Livewire\SyncDashboard::class);
+    }
 
-    /**
-     * Define module schedules.
-     * 
-     * @param $schedule
-     */
-    // protected function configureSchedules(Schedule $schedule): void
-    // {
-    //     $schedule->command('inspire')->hourly();
-    // }
+    public function register(): void
+    {
+        $this->app->register(EventServiceProvider::class);
+        $this->app->register(RouteServiceProvider::class);
+    }
+
+    protected function registerViews(): void
+    {
+        $this->loadViewsFrom(module_path($this->moduleName, 'resources/views'), $this->moduleNameLower);
+    }
+
+    protected function registerConfig(): void
+    {
+        $this->mergeConfigFrom(module_path($this->moduleName, 'config/config.php'), 'afispipeline');
+    }
 }

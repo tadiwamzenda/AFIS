@@ -1,8 +1,9 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
-use Modules\AfisPipeline\Http\Controllers\AfisPipelineController;
+use Modules\AfisPipeline\Http\Controllers\PipelineController;
 
-Route::middleware(['auth', 'verified'])->group(function () {
-    Route::resource('afispipelines', AfisPipelineController::class)->names('afispipeline');
+Route::middleware('auth')->group(function () {
+    Route::get('/admin/afis/pipeline', [PipelineController::class, 'index'])
+        ->name('admin.afis.pipeline');
 });
