@@ -2,45 +2,34 @@
 
 namespace Modules\AfisPortal\Providers;
 
-use Nwidart\Modules\Support\ModuleServiceProvider;
-use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Support\ServiceProvider;
 
-class AfisPortalServiceProvider extends ModuleServiceProvider
+class AfisPortalServiceProvider extends ServiceProvider
 {
-    /**
-     * The name of the module.
-     */
-    protected string $name = 'AfisPortal';
+    protected string $moduleName      = 'AfisPortal';
+    protected string $moduleNameLower = 'afisportal';
 
-    /**
-     * The lowercase version of the module name.
-     */
-    protected string $nameLower = 'afisportal';
+    public function boot(): void
+    {
+        $this->registerViews();
 
-    /**
-     * Command classes to register.
-     *
-     * @var string[]
-     */
-    // protected array $commands = [];
+        \Livewire\Livewire::component('afis-fleet-overview',         \Modules\AfisPortal\Livewire\FleetOverview::class);
+        \Livewire\Livewire::component('afis-client-fleet-dashboard', \Modules\AfisPortal\Livewire\ClientFleetDashboard::class);
+        \Livewire\Livewire::component('afis-vehicle-inspector',      \Modules\AfisPortal\Livewire\VehicleInspector::class);
+        \Livewire\Livewire::component('afis-report-viewer',          \Modules\AfisPortal\Livewire\ReportViewer::class);
+    }
 
-    /**
-     * Provider classes to register.
-     *
-     * @var string[]
-     */
-    protected array $providers = [
-        EventServiceProvider::class,
-        RouteServiceProvider::class,
-    ];
+    public function register(): void
+    {
+        $this->app->register(EventServiceProvider::class);
+        $this->app->register(RouteServiceProvider::class);
+    }
 
-    /**
-     * Define module schedules.
-     * 
-     * @param $schedule
-     */
-    // protected function configureSchedules(Schedule $schedule): void
-    // {
-    //     $schedule->command('inspire')->hourly();
-    // }
+    protected function registerViews(): void
+    {
+        $this->loadViewsFrom(
+            module_path($this->moduleName, 'resources/views'),
+            $this->moduleNameLower
+        );
+    }
 }

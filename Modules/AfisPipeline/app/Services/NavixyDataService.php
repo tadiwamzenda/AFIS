@@ -51,38 +51,70 @@ class NavixyDataService
 
     // ─── Trips ────────────────────────────────────────────────────────────────
 
-    public function getTrips(int $trackerId, Carbon $from, Carbon $to): array
-    {
-        try {
-            $response = $this->post('history/track/list', [
+  public function getTrips(int $trackerId, Carbon $from, Carbon $to): array
+{
+    try {
+        $hash = $this->auth->getHash();
+
+        $response = Http::timeout(30)
+            ->withHeaders(['Content-Type' => 'application/json'])
+            ->post("{$this->baseUrl}/track/list", [
+                'hash'       => $hash,
                 'tracker_id' => $trackerId,
                 'from'       => $from->format('Y-m-d H:i:s'),
                 'to'         => $to->format('Y-m-d H:i:s'),
-                'split'      => true,
+                'filter'     => false,
             ]);
-            return $response['list'] ?? [];
-        } catch (\Throwable $e) {
-            Log::warning("AfisPipeline: trips fetch failed for tracker {$trackerId}", ['error' => $e->getMessage()]);
+
+        $data = $response->json();
+
+        if (empty($data['success'])) {
+            Log::warning("AfisPipeline: track/list failed", ['response' => $data]);
             return [];
         }
+
+        return $data['list'] ?? [];
+
+    } catch (\Throwable $e) {
+        Log::warning("AfisPipeline: trips fetch failed for tracker {$trackerId}", [
+            'error' => $e->getMessage(),
+        ]);
+        return [];
     }
+}
 
     // ─── Events ───────────────────────────────────────────────────────────────
 
     public function getEvents(int $trackerId, Carbon $from, Carbon $to): array
-    {
-        try {
-            $response = $this->post('event/log/list', [
+{
+    try {
+        $hash = $this->auth->getHash();
+
+        $response = Http::timeout(30)
+            ->withHeaders(['Content-Type' => 'application/json'])
+            ->post("{$this->baseUrl}/event/log/list", [
+                'hash'       => $hash,
                 'tracker_id' => $trackerId,
                 'from'       => $from->format('Y-m-d H:i:s'),
                 'to'         => $to->format('Y-m-d H:i:s'),
             ]);
-            return $response['list'] ?? [];
-        } catch (\Throwable $e) {
-            Log::warning("AfisPipeline: events fetch failed for tracker {$trackerId}", ['error' => $e->getMessage()]);
+
+        $data = $response->json();
+
+        if (empty($data['success'])) {
+            Log::warning("AfisPipeline: event/log/list failed", ['response' => $data]);
             return [];
         }
+
+        return $data['list'] ?? [];
+
+    } catch (\Throwable $e) {
+        Log::warning("AfisPipeline: events fetch failed for tracker {$trackerId}", [
+            'error' => $e->getMessage(),
+        ]);
+        return [];
     }
+}
 
     // ─── HTTP helpers ─────────────────────────────────────────────────────────
 

@@ -15,3 +15,7 @@ Route::middleware('auth')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
 
 });
+ // Client portal landing — redirects to AFIS client dashboard
+Route::get('/client/dashboard', function () {
+    return redirect()->route('client.dashboard');
+})->name('client.dashboard');

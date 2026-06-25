@@ -54,7 +54,7 @@ class PipelineSyncService
             $tripsSynced    = 0;
             $eventsSynced   = 0;
 
-            $from = now()->subHours(24);
+            $from = now()->subHours(168);
             $to   = now();
 
             foreach ($clientTrackers as $navixyTracker) {
@@ -78,23 +78,40 @@ class PipelineSyncService
                 $trackersSynced++;
 
                 // Sync trips
+                
                 $trips = $this->navixy->getTrips($navixyTracker['id'], $from, $to);
+
                 foreach ($trips as $trip) {
-                    AfisTrip::firstOrCreate(
+                    // Skip single GPS point reports — not real trips
+                    if (($trip['type'] ?? '') === 'single_report') {
+                        continue;
+                    }
+
+                    // Skip trips with no end date
+                    if (empty($trip['end_date'])) {
+                        continue;
+                    }
+
+                    $startTime = Carbon::parse($trip['start_date']);
+                    $endTime   = Carbon::parse($trip['end_date']);
+                    $durationMinutes = (int) $startTime->diffInMinutes($endTime);
+
+                    AfisTrip::updateOrCreate(
                         [
                             'tracker_id'        => $tracker->id,
                             'navixy_tracker_id' => $navixyTracker['id'],
-                            'start_time'        => Carbon::parse($trip['start_date'] ?? null),
+                            'start_time'        => $startTime,
                         ],
                         [
                             'client_id'        => $client->id,
-                            'end_time'         => isset($trip['end_date']) ? Carbon::parse($trip['end_date']) : null,
-                            'distance_km'      => ($trip['length'] ?? 0) / 1000,
+                            'end_time'         => $endTime,
+                            'distance_km'      => $trip['length'] ?? 0,
                             'avg_speed_kmh'    => $trip['avg_speed'] ?? 0,
                             'max_speed_kmh'    => $trip['max_speed'] ?? 0,
-                            'duration_minutes' => $trip['duration'] ?? 0,
+                            'duration_minutes' => $durationMinutes,
                         ]
                     );
+
                     $tripsSynced++;
                 }
 
