@@ -2,45 +2,33 @@
 
 namespace Modules\AfisIncidents\Providers;
 
-use Nwidart\Modules\Support\ModuleServiceProvider;
-use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Support\ServiceProvider;
 
-class AfisIncidentsServiceProvider extends ModuleServiceProvider
+class AfisIncidentsServiceProvider extends ServiceProvider
 {
-    /**
-     * The name of the module.
-     */
-    protected string $name = 'AfisIncidents';
+    protected string $moduleName      = 'AfisIncidents';
+    protected string $moduleNameLower = 'afisincidents';
 
-    /**
-     * The lowercase version of the module name.
-     */
-    protected string $nameLower = 'afisincidents';
+    public function boot(): void
+    {
+        $this->registerViews();
+        $this->loadMigrationsFrom(module_path($this->moduleName, 'database/migrations'));
 
-    /**
-     * Command classes to register.
-     *
-     * @var string[]
-     */
-    // protected array $commands = [];
+        \Livewire\Livewire::component('afis-incident-form',    \Modules\AfisIncidents\Livewire\IncidentForm::class);
+        \Livewire\Livewire::component('afis-incident-archive', \Modules\AfisIncidents\Livewire\IncidentArchive::class);
+    }
 
-    /**
-     * Provider classes to register.
-     *
-     * @var string[]
-     */
-    protected array $providers = [
-        EventServiceProvider::class,
-        RouteServiceProvider::class,
-    ];
+    public function register(): void
+    {
+        $this->app->register(EventServiceProvider::class);
+        $this->app->register(RouteServiceProvider::class);
+    }
 
-    /**
-     * Define module schedules.
-     * 
-     * @param $schedule
-     */
-    // protected function configureSchedules(Schedule $schedule): void
-    // {
-    //     $schedule->command('inspire')->hourly();
-    // }
+    protected function registerViews(): void
+    {
+        $this->loadViewsFrom(
+            module_path($this->moduleName, 'resources/views'),
+            $this->moduleNameLower
+        );
+    }
 }

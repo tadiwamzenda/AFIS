@@ -1,8 +1,17 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
-use Modules\AfisIncidents\Http\Controllers\AfisIncidentsController;
+use Modules\AfisIncidents\Http\Controllers\IncidentController;
 
-Route::middleware(['auth', 'verified'])->group(function () {
-    Route::resource('afisincidents', AfisIncidentsController::class)->names('afisincidents');
+// Admin routes
+Route::middleware('auth')->prefix('admin/afis')->name('admin.afis.')->group(function () {
+    Route::get('/incidents',                    [IncidentController::class, 'adminIndex'])->name('incidents.index');
+    Route::get('/incidents/{clientId}/log',     [IncidentController::class, 'adminLog'])->name('incidents.log');
+    Route::get('/incidents/{clientId}/archive', [IncidentController::class, 'adminArchive'])->name('incidents.archive');
+});
+
+// Client portal routes
+Route::middleware('auth')->prefix('client/incidents')->name('client.incidents.')->group(function () {
+    Route::get('/log',     [IncidentController::class, 'clientLog'])->name('log');
+    Route::get('/archive', [IncidentController::class, 'clientArchive'])->name('archive');
 });
