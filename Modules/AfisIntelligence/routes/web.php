@@ -1,8 +1,17 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
-use Modules\AfisIntelligence\Http\Controllers\AfisIntelligenceController;
+use Modules\AfisIntelligence\Http\Controllers\IntelligenceController;
 
-Route::middleware(['auth', 'verified'])->group(function () {
-    Route::resource('afisintelligences', AfisIntelligenceController::class)->names('afisintelligence');
+// Admin routes
+Route::middleware('auth')->prefix('admin/afis/intelligence')->name('admin.afis.intelligence.')->group(function () {
+    Route::get('/',                  [IntelligenceController::class, 'index'])->name('index');
+    Route::get('/{clientId}',        [IntelligenceController::class, 'dashboard'])->name('dashboard');
+    Route::get('/{clientId}/archive',[IntelligenceController::class, 'archive'])->name('archive');
+});
+
+// Client portal routes
+Route::middleware('auth')->prefix('client/intelligence')->name('client.intelligence.')->group(function () {
+    Route::get('/',        [IntelligenceController::class, 'clientDashboard'])->name('dashboard');
+    Route::get('/archive', [IntelligenceController::class, 'clientArchive'])->name('archive');
 });

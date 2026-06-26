@@ -2,45 +2,32 @@
 
 namespace Modules\AfisIntelligence\Providers;
 
-use Nwidart\Modules\Support\ModuleServiceProvider;
-use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Support\ServiceProvider;
 
-class AfisIntelligenceServiceProvider extends ModuleServiceProvider
+class AfisIntelligenceServiceProvider extends ServiceProvider
 {
-    /**
-     * The name of the module.
-     */
-    protected string $name = 'AfisIntelligence';
+    protected string $moduleName      = 'AfisIntelligence';
+    protected string $moduleNameLower = 'afisintelligence';
 
-    /**
-     * The lowercase version of the module name.
-     */
-    protected string $nameLower = 'afisintelligence';
+    public function boot(): void
+    {
+        $this->registerViews();
 
-    /**
-     * Command classes to register.
-     *
-     * @var string[]
-     */
-    // protected array $commands = [];
+        \Livewire\Livewire::component('afis-intelligence-dashboard', \Modules\AfisIntelligence\Livewire\IntelligenceDashboard::class);
+        \Livewire\Livewire::component('afis-intelligence-archive',   \Modules\AfisIntelligence\Livewire\IntelligenceArchive::class);
+    }
 
-    /**
-     * Provider classes to register.
-     *
-     * @var string[]
-     */
-    protected array $providers = [
-        EventServiceProvider::class,
-        RouteServiceProvider::class,
-    ];
+    public function register(): void
+    {
+        $this->app->register(EventServiceProvider::class);
+        $this->app->register(RouteServiceProvider::class);
+    }
 
-    /**
-     * Define module schedules.
-     * 
-     * @param $schedule
-     */
-    // protected function configureSchedules(Schedule $schedule): void
-    // {
-    //     $schedule->command('inspire')->hourly();
-    // }
+    protected function registerViews(): void
+    {
+        $this->loadViewsFrom(
+            module_path($this->moduleName, 'resources/views'),
+            $this->moduleNameLower
+        );
+    }
 }
