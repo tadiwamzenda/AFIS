@@ -5,7 +5,6 @@ namespace Modules\AfisPipeline\Services;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 use Modules\AdmmInventory\Models\Client;
-use Modules\AdmmInventory\Models\GpsDevice;
 use Modules\AfisPipeline\Models\AfisEvent;
 use Modules\AfisPipeline\Models\AfisSyncLog;
 use Modules\AfisPipeline\Models\AfisTracker;
@@ -24,83 +23,40 @@ class PipelineSyncService
         ]);
 
         try {
-            // Get all Navixy trackers
             $instance = $client->navixy_instance ?? 1;
-            $navixyTrackers = $this->navixy->getTrackers($instance);
 
-            // Get navixy_tracker_ids assigned to this client
-            $clientTrackerIds = GpsDevice::where('client_id', $client->id)
-                ->whereNotNull('navixy_tracker_id')
-                ->pluck('navixy_tracker_id')
-                ->toArray();
+            // Use trackers already discovered via client login
+            $knownTrackers = AfisTracker::where('client_id', $client->id)->get();
 
-            // Filter trackers to this client's devices
-            $clientTrackers = collect($navixyTrackers)
-                ->filter(fn($t) => in_array($t['id'], $clientTrackerIds));
-
-            if ($clientTrackers->isEmpty()) {
+            if ($knownTrackers->isEmpty()) {
                 $log->update([
-                    'status'       => 'completed',
-                    'completed_at' => now(),
-                    'error_message' => 'No trackers found for this client.',
+                    'status'        => 'completed',
+                    'completed_at'  => now(),
+                    'error_message' => 'No trackers found. Client must log in first to discover their fleet.',
                 ]);
                 return $log;
             }
 
-            // Get last GPS points
-            $lastPoints = collect($this->navixy->getLastGpsPoints($clientTrackers->pluck('id')->toArray(), $instance))
-                ->keyBy('tracker_id');
+            $from         = now()->subHours(24);
+            $to           = now();
+            $tripsSynced  = 0;
+            $eventsSynced = 0;
 
-            $trackersSynced = 0;
-            $tripsSynced    = 0;
-            $eventsSynced   = 0;
-
-            $from = now()->subHours(168);
-            $to   = now();
-
-            foreach ($clientTrackers as $navixyTracker) {
-                $lastPoint = $lastPoints->get($navixyTracker['id']);
-
-                // Upsert tracker record
-                $tracker = AfisTracker::updateOrCreate(
-                    ['navixy_tracker_id' => $navixyTracker['id']],
-                    [
-                        'client_id'            => $client->id,
-                        'label'                => $navixyTracker['label'] ?? 'Unknown',
-                        'model_name'           => $navixyTracker['source']['model'] ?? null,
-                        'is_active'            => ($navixyTracker['status']['identification'] ?? '') !== 'blocked',
-                        'last_active_at'       => isset($navixyTracker['last_connection'])
-                            ? Carbon::parse($navixyTracker['last_connection']) : null,
-                        'last_lat'             => $lastPoint['gps']['lat'] ?? null,
-                        'last_lng'             => $lastPoint['gps']['lng'] ?? null,
-                        'last_synced_at'       => now(),
-                    ]
-                );
-                $trackersSynced++;
-
+            foreach ($knownTrackers as $tracker) {
                 // Sync trips
-                
-                $trips = $this->navixy->getTrips($navixyTracker['id'], $from, $to, $instance);
-
+                $trips = $this->navixy->getTrips($tracker->navixy_tracker_id, $from, $to, $instance);
                 foreach ($trips as $trip) {
-                    // Skip single GPS point reports — not real trips
-                    if (($trip['type'] ?? '') === 'single_report') {
-                        continue;
-                    }
+                    if (($trip['type'] ?? '') === 'single_report') continue;
+                    if (empty($trip['end_date'])) continue;
 
-                    // Skip trips with no end date
-                    if (empty($trip['end_date'])) {
-                        continue;
-                    }
-
-                    $startTime = Carbon::parse($trip['start_date']);
-                    $endTime   = Carbon::parse($trip['end_date']);
+                    $startTime       = Carbon::parse($trip['start_date']);
+                    $endTime         = Carbon::parse($trip['end_date']);
                     $durationMinutes = (int) $startTime->diffInMinutes($endTime);
 
-                    AfisTrip::updateOrCreate(
+                    AfisTrip::firstOrCreate(
                         [
                             'tracker_id'        => $tracker->id,
-                            'navixy_tracker_id' => $navixyTracker['id'],
+                            'navixy_tracker_id' => $tracker->navixy_tracker_id,
                             'start_time'        => $startTime,
                         ],
                         [
@@ -112,17 +68,16 @@ class PipelineSyncService
                             'duration_minutes' => $durationMinutes,
                         ]
                     );
-
                     $tripsSynced++;
                 }
 
                 // Sync events
-                $events = $this->navixy->getEvents($navixyTracker['id'], $from, $to, $instance);
+                $events = $this->navixy->getEvents($tracker->navixy_tracker_id, $from, $to, $instance);
                 foreach ($events as $event) {
                     AfisEvent::firstOrCreate(
                         [
                             'tracker_id'        => $tracker->id,
-                            'navixy_tracker_id' => $navixyTracker['id'],
+                            'navixy_tracker_id' => $tracker->navixy_tracker_id,
                             'event_type'        => $event['event_id'] ?? 'unknown',
                             'occurred_at'       => Carbon::parse($event['time'] ?? now()),
                         ],
@@ -139,14 +94,14 @@ class PipelineSyncService
 
             $log->update([
                 'status'          => 'completed',
-                'trackers_synced' => $trackersSynced,
+                'trackers_synced' => $knownTrackers->count(),
                 'trips_synced'    => $tripsSynced,
                 'events_synced'   => $eventsSynced,
                 'completed_at'    => now(),
             ]);
 
         } catch (\Throwable $e) {
-            Log::error("AfisPipeline: sync failed for client {$client->name}", ['error' => $e->getMessage()]);
+            Log::error("AfisPipeline: sync failed for {$client->name}", ['error' => $e->getMessage()]);
             $log->update([
                 'status'        => 'failed',
                 'error_message' => $e->getMessage(),

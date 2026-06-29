@@ -36,6 +36,8 @@ class NavixyAuthService
 
         $data = $response->json();
 
+        \Illuminate\Support\Facades\Log::info('Navixy raw auth response', ['data' => $data]);
+
         if (empty($data['success'])) {
             $code = $data['status']['code'] ?? 'unknown';
             Log::warning('Navixy auth failed', ['code' => $code, 'email' => $email]);

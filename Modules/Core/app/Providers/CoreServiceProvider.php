@@ -2,45 +2,30 @@
 
 namespace Modules\Core\Providers;
 
-use Nwidart\Modules\Support\ModuleServiceProvider;
-use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Support\ServiceProvider;
 
-class CoreServiceProvider extends ModuleServiceProvider
+class CoreServiceProvider extends ServiceProvider
 {
-    /**
-     * The name of the module.
-     */
-    protected string $name = 'Core';
+    protected string $moduleName      = 'Core';
+    protected string $moduleNameLower = 'core';
 
-    /**
-     * The lowercase version of the module name.
-     */
-    protected string $nameLower = 'core';
+    public function boot(): void
+    {
+        $this->registerViews();
+        $this->loadMigrationsFrom(module_path($this->moduleName, 'database/migrations'));
+    }
 
-    /**
-     * Command classes to register.
-     *
-     * @var string[]
-     */
-    // protected array $commands = [];
+    public function register(): void
+    {
+        $this->app->register(EventServiceProvider::class);
+        $this->app->register(RouteServiceProvider::class);
+    }
 
-    /**
-     * Provider classes to register.
-     *
-     * @var string[]
-     */
-    protected array $providers = [
-        EventServiceProvider::class,
-        RouteServiceProvider::class,
-    ];
-
-    /**
-     * Define module schedules.
-     * 
-     * @param $schedule
-     */
-    // protected function configureSchedules(Schedule $schedule): void
-    // {
-    //     $schedule->command('inspire')->hourly();
-    // }
+    protected function registerViews(): void
+    {
+        $this->loadViewsFrom(
+            module_path($this->moduleName, 'resources/views'),
+            $this->moduleNameLower
+        );
+    }
 }

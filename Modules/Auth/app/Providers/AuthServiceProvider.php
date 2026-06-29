@@ -20,6 +20,7 @@ class AuthServiceProvider extends ServiceProvider
         $router = $this->app->make(Router::class);
         $router->pushMiddlewareToGroup('web', NavixyHashRefreshMiddleware::class);
         $router->aliasMiddleware('navixy.hash', NavixyHashRefreshMiddleware::class);
+        \Livewire\Livewire::component('auth-bt-user-manager', \Modules\Auth\Livewire\BtUserManager::class);
     }
 
     public function register(): void

@@ -33,6 +33,7 @@ class AuthController extends Controller
         ]);
 
         // ── Step 1: Authenticate against Navixy (same URL for both instances) ──
+        
         try {
             $navixy = $this->navixyAuth->authenticate($request->email, $request->password);
         } catch (\RuntimeException $e) {
@@ -40,21 +41,46 @@ class AuthController extends Controller
                 ->withErrors(['email' => 'Invalid credentials. Please check your Navixy email and password.'])
                 ->withInput(['email' => $request->email]);
         }
+        
 
-        // ── Step 2: Find or auto-create local user ────────────────────────────
-        $user = $this->resolveOrCreateUser($navixy['user_id'], $request->email, $navixy);
+// Step 2: Find or auto-create local user
+$userId = $navixy['user_id'] ?? null;
+
+if ($userId) {
+    // Sub-user with user_id returned — resolve or auto-create
+    $user = $this->resolveOrCreateUser((int) $userId, $request->email, $navixy);
+} else {
+    // Navixy didn't return user_id (master accounts and some sub-users)
+    // Fall back to email lookup — works for both BT staff and clients
+    $user = User::where('email', $request->email)->first();
+
+    if (!$user) {
+        // Not in local DB yet — try auto-creating from sub-user sync data
+        $instanceData = $this->findUserInInstances(0, $request->email);
+
+        if ($instanceData) {
+            [$instance, $subUserData] = $instanceData;
+            $name = trim(($subUserData['first_name'] ?? '') . ' ' . ($subUserData['last_name'] ?? '')) ?: $request->email;
+
+            $user = User::create([
+                'name'                     => $name,
+                'email'                    => $request->email,
+                'navixy_user_id'           => $subUserData['id'] ?? 0,
+                'navixy_account_id'        => 0,
+                'navixy_instance'          => $instance,
+                'navixy_security_group_id' => $subUserData['security_group_id'] ?? null,
+                'role'                     => User::ROLE_CLIENT,
+                'is_active'                => true,
+            ]);
+        }
 
         if (!$user) {
             return back()
-                ->withErrors(['email' => 'Your account is pending activation. Contact Bantu Track support.'])
+                ->withErrors(['email' => 'Your account is not registered. Contact Bantu Track support.'])
                 ->withInput(['email' => $request->email]);
         }
-
-        if (!$user->is_active) {
-            return back()
-                ->withErrors(['email' => 'Your account is deactivated. Contact Bantu Track support.'])
-                ->withInput(['email' => $request->email]);
-        }
+    }
+}
 
         // ── Step 3: Create session ────────────────────────────────────────────
         Auth::login($user, $request->boolean('remember'));
@@ -148,25 +174,29 @@ class AuthController extends Controller
      * Search both instance sub-user lists for the given navixy_user_id.
      * Returns [instance_number, sub_user_data] or null if not found.
      */
-    protected function findUserInInstances(int $navixyUserId): ?array
-    {
-        foreach ([1, 2] as $instance) {
-            try {
-                $subUsers = $this->pipelineAuth->getSubUsers($instance);
-                $found    = collect($subUsers)->firstWhere('id', $navixyUserId);
+protected function findUserInInstances(int $navixyUserId, string $email = ''): ?array
+{
+    foreach ([1, 2] as $instance) {
+        try {
+            $subUsers = $this->pipelineAuth->getSubUsers($instance);
 
-                if ($found) {
-                    return [$instance, $found];
-                }
-            } catch (\Throwable $e) {
-                Log::warning("AuthController: could not fetch sub-users for instance {$instance}", [
-                    'error' => $e->getMessage(),
-                ]);
+            // Search by user_id if provided, otherwise by email
+            $found = $navixyUserId > 0
+                ? collect($subUsers)->firstWhere('id', $navixyUserId)
+                : collect($subUsers)->firstWhere('login', $email);
+
+            if ($found) {
+                return [$instance, $found];
             }
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning("AuthController: could not fetch sub-users for instance {$instance}", [
+                'error' => $e->getMessage(),
+            ]);
         }
-
-        return null;
     }
+
+    return null;
+}
 
     protected function redirectByRole(User $user)
     {

@@ -4,22 +4,88 @@ namespace Modules\AfisPortal\Livewire;
 
 use Carbon\Carbon;
 use Livewire\Component;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Http;
 use Modules\AdmmInventory\Models\Client;
 use Modules\AfisEngine\Jobs\GenerateAiReportJob;
 use Modules\AfisEngine\Models\AfisAiReport;
 use Modules\AfisPipeline\Models\AfisTracker;
 use Modules\AfisPipeline\Models\AfisTrip;
 use Modules\AfisPipeline\Models\AfisEvent;
+use Modules\AfisPipeline\Models\AfisSyncLog;
 
 class ClientFleetDashboard extends Component
 {
     public int    $clientId;
-    public string $message   = '';
+    public string $message    = '';
     public bool   $generating = false;
+    public bool   $syncing    = false;
 
     public function mount(int $clientId): void
     {
         $this->clientId = $clientId;
+        $this->discoverTrackers();
+    }
+
+    /**
+     * On first visit (or after 15 min), use the client's own Navixy session hash
+     * to discover their fleet automatically — no manual linking needed.
+     */
+    private function discoverTrackers(): void
+    {
+        $hash = session('navixy_hash');
+        if (!$hash) return;
+
+        // Only re-discover if no trackers exist or last sync > 15 min ago
+        $trackerCount = AfisTracker::where('client_id', $this->clientId)->count();
+        $lastSync     = AfisSyncLog::where('client_id', $this->clientId)
+            ->where('status', 'completed')
+            ->latest('created_at')
+            ->first();
+
+        $needsSync = $trackerCount === 0 ||
+            !$lastSync ||
+            $lastSync->created_at->diffInMinutes(now()) > 15;
+
+        if (!$needsSync) return;
+
+        try {
+            $baseUrl  = rtrim(config('auth-module.navixy_base_url', 'https://api.us.navixy.com/v2'), '/');
+            $response = Http::timeout(30)
+                ->withHeaders(['Content-Type' => 'application/json'])
+                ->post("{$baseUrl}/tracker/list", ['hash' => $hash]);
+
+            $data     = $response->json();
+            $trackers = $data['list'] ?? [];
+
+            if (empty($trackers)) return;
+
+            foreach ($trackers as $t) {
+                AfisTracker::updateOrCreate(
+                    ['navixy_tracker_id' => $t['id']],
+                    [
+                        'client_id'      => $this->clientId,
+                        'label'          => $t['label'] ?? 'Unknown',
+                        'model_name'     => $t['source']['model'] ?? null,
+                        'is_active'      => !($t['source']['blocked'] ?? false),
+                        'last_synced_at' => now(),
+                    ]
+                );
+            }
+
+            AfisSyncLog::create([
+                'client_id'       => $this->clientId,
+                'status'          => 'completed',
+                'trackers_synced' => count($trackers),
+                'trips_synced'    => 0,
+                'events_synced'   => 0,
+                'started_at'      => now(),
+                'completed_at'    => now(),
+            ]);
+
+        } catch (\Throwable $e) {
+            Log::warning('ClientFleetDashboard: tracker discovery failed', ['error' => $e->getMessage()]);
+        }
     }
 
     public function generateFleetReport(): void
@@ -30,9 +96,10 @@ class ClientFleetDashboard extends Component
         GenerateAiReportJob::dispatch(
             reportType: 'fleet_intelligence',
             clientId:   $this->clientId,
+            options:    ['days' => 30, 'use_cache' => false]
         );
 
-        $this->message    = 'Fleet intelligence report is being generated. Refresh in 30-60 seconds to see it.';
+        $this->message    = 'Fleet intelligence report queued. Available in 30-60 seconds.';
         $this->generating = false;
     }
 
@@ -43,10 +110,10 @@ class ClientFleetDashboard extends Component
         GenerateAiReportJob::dispatch(
             reportType: 'predictive_intelligence',
             clientId:   $this->clientId,
-            options:    ['days' => 90],
+            options:    ['days' => 90, 'use_cache' => false]
         );
 
-        $this->message    = 'Predictive intelligence report is being generated. Refresh in 30-60 seconds.';
+        $this->message    = 'Predictive intelligence report queued. Available in 30-60 seconds.';
         $this->generating = false;
     }
 
@@ -58,11 +125,11 @@ class ClientFleetDashboard extends Component
             ->get()
             ->map(function ($tracker) {
                 $last30Days = Carbon::now()->subDays(30);
-                $tracker->trip_count    = AfisTrip::where('tracker_id', $tracker->id)->where('start_time', '>=', $last30Days)->count();
-                $tracker->event_count   = AfisEvent::where('tracker_id', $tracker->id)->where('occurred_at', '>=', $last30Days)->count();
-                $tracker->max_speed     = AfisTrip::where('tracker_id', $tracker->id)->where('start_time', '>=', $last30Days)->max('max_speed_kmh');
-                $tracker->total_km      = round(AfisTrip::where('tracker_id', $tracker->id)->where('start_time', '>=', $last30Days)->sum('distance_km'), 1);
-                $tracker->last_report   = AfisAiReport::where('tracker_id', $tracker->id)->completed()->latest()->first();
+                $tracker->trip_count  = AfisTrip::where('tracker_id', $tracker->id)->where('start_time', '>=', $last30Days)->count();
+                $tracker->event_count = AfisEvent::where('tracker_id', $tracker->id)->where('occurred_at', '>=', $last30Days)->count();
+                $tracker->max_speed   = AfisTrip::where('tracker_id', $tracker->id)->where('start_time', '>=', $last30Days)->max('max_speed_kmh');
+                $tracker->total_km    = round(AfisTrip::where('tracker_id', $tracker->id)->where('start_time', '>=', $last30Days)->sum('distance_km'), 1);
+                $tracker->last_report = AfisAiReport::where('tracker_id', $tracker->id)->completed()->latest()->first();
                 return $tracker;
             });
 

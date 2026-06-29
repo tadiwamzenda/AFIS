@@ -4,6 +4,7 @@ use Illuminate\Support\Facades\Route;
 use Modules\Auth\Http\Controllers\AuthController;
 
 Route::get('/', fn() => redirect()->route('login'));
+
 // Guest routes
 Route::middleware('guest')->group(function () {
     Route::get('/login', [AuthController::class, 'showLogin'])->name('login');
@@ -13,9 +14,8 @@ Route::middleware('guest')->group(function () {
 // Authenticated routes
 Route::middleware('auth')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
-
 });
- // Client portal landing — redirects to AFIS client dashboard
-Route::get('/client/dashboard', function () {
-    return redirect()->route('client.dashboard');
-})->name('client.dashboard');
+
+Route::get('/admin/users', function () {
+    return view('auth::users.index');
+})->name('admin.users.index')->middleware('auth');
