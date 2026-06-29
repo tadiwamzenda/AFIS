@@ -43,7 +43,7 @@
                 </svg>
                 Predictive Intelligence
             </button>
-            <a href="{{ route('admin.afis.reports', $client->id) }}"
+            <a href="{{ auth()->user()->isBtStaff() ? route('admin.afis.reports', $client->id) : route('client.reports') }}"
                 class="inline-flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-gray-800 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
                 View all reports →
             </a>
@@ -83,7 +83,7 @@
                     @if($tracker->last_report)
                         <span class="text-xs text-green-600 font-medium">Report available</span>
                     @endif
-                    <a href="{{ route('admin.afis.vehicle', $tracker->id) }}"
+                    <a href="{{ auth()->user()->isBtStaff() ? route('admin.afis.vehicle', $tracker->id) : route('client.vehicle', $tracker->id) }}"
                         class="text-xs text-brand-600 hover:text-brand-700 font-medium px-3 py-1.5 border border-brand-200 rounded-lg hover:bg-brand-50 transition-colors">
                         Inspect
                     </a>
@@ -91,7 +91,8 @@
             </div>
             @empty
             <p class="px-5 py-8 text-sm text-gray-400 text-center">
-                No trackers found for this client. Make sure GPS devices have Navixy tracker IDs set and run a pipeline sync.
+                No vehicles found yet. Your fleet is being discovered automatically.
+                If this persists after refreshing, contact Bantu Track support.
             </p>
             @endforelse
         </div>
