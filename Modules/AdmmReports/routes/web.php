@@ -17,5 +17,6 @@ Route::middleware('auth')->prefix('admin/admm/reports')->name('admin.admm.report
     Route::get('/assignment-chain',    [ReportController::class, 'assignmentChain'])->name('assignment-chain');
     Route::get('/internal-stock',      [ReportController::class, 'internalStock'])->name('internal-stock');
     Route::get('/audit-trail',         [ReportController::class, 'auditTrail'])->name('audit-trail');
-    Route::get('/internal-stock', [ReportController::class, 'internalStock'])->name('internal-stock');
+    
+    
 });

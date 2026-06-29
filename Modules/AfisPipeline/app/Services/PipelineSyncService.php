@@ -25,7 +25,8 @@ class PipelineSyncService
 
         try {
             // Get all Navixy trackers
-            $navixyTrackers = $this->navixy->getTrackers();
+            $instance = $client->navixy_instance ?? 1;
+            $navixyTrackers = $this->navixy->getTrackers($instance);
 
             // Get navixy_tracker_ids assigned to this client
             $clientTrackerIds = GpsDevice::where('client_id', $client->id)
@@ -47,7 +48,7 @@ class PipelineSyncService
             }
 
             // Get last GPS points
-            $lastPoints = collect($this->navixy->getLastGpsPoints($clientTrackers->pluck('id')->toArray()))
+            $lastPoints = collect($this->navixy->getLastGpsPoints($clientTrackers->pluck('id')->toArray(), $instance))
                 ->keyBy('tracker_id');
 
             $trackersSynced = 0;
@@ -79,7 +80,7 @@ class PipelineSyncService
 
                 // Sync trips
                 
-                $trips = $this->navixy->getTrips($navixyTracker['id'], $from, $to);
+                $trips = $this->navixy->getTrips($navixyTracker['id'], $from, $to, $instance);
 
                 foreach ($trips as $trip) {
                     // Skip single GPS point reports — not real trips
@@ -116,7 +117,7 @@ class PipelineSyncService
                 }
 
                 // Sync events
-                $events = $this->navixy->getEvents($navixyTracker['id'], $from, $to);
+                $events = $this->navixy->getEvents($navixyTracker['id'], $from, $to, $instance);
                 foreach ($events as $event) {
                     AfisEvent::firstOrCreate(
                         [

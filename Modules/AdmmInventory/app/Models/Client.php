@@ -8,8 +8,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Client extends Model
 {
     protected $fillable = [
-        'name', 'navixy_account_id', 'contact_person',
-        'contact_email', 'contact_phone', 'is_active', 'notes',
+        'name', 'navixy_account_id', 'navixy_instance', 'navixy_security_group_id',
+        'contact_person', 'contact_email', 'contact_phone', 'is_active', 'notes',
     ];
 
     protected $casts = [

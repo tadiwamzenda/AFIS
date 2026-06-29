@@ -1,8 +1,8 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
-use Modules\Notifications\Http\Controllers\NotificationsController;
+use Modules\Notifications\Http\Controllers\NotificationController;
 
-Route::middleware(['auth', 'verified'])->group(function () {
-    Route::resource('notifications', NotificationsController::class)->names('notifications');
+Route::middleware('auth')->prefix('admin')->name('admin.')->group(function () {
+    Route::get('/notifications', [NotificationController::class, 'index'])->name('notifications.index');
 });

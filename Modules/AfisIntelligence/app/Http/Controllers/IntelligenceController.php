@@ -47,26 +47,30 @@ class IntelligenceController extends Controller
 
     public function clientDashboard()
     {
-        $client = $this->resolveClient();
+        $client = $this->resolveClientFromAuth();
         return view('afisintelligence::client.dashboard', compact('client'));
     }
 
     public function clientArchive()
     {
-        $client = $this->resolveClient();
+        $client = $this->resolveClientFromAuth();
         return view('afisintelligence::client.archive', compact('client'));
     }
 
-    private function resolveClient(): Client
+   private function resolveClientFromAuth(): Client
     {
-        /** @var User $user */
-        $user   = Auth::user();
-        $client = Client::where('navixy_account_id', $user->navixy_account_id)->first();
+        /** @var \App\Models\User $user */
+        $user = Auth::user();
 
-        if (!$client) {
-            abort(403, 'Your account is not linked to a client. Contact Bantu Track support.');
+        // Link via security_group_id + instance — most precise
+        if ($user->navixy_security_group_id && $user->navixy_instance) {
+            $client = Client::where('navixy_security_group_id', $user->navixy_security_group_id)
+                ->where('navixy_instance', $user->navixy_instance)
+                ->first();
+
+            if ($client) return $client;
         }
 
-        return $client;
+        abort(403, 'Your account is not linked to a client fleet. Contact Bantu Track support.');
     }
 }

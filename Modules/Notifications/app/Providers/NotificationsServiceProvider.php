@@ -2,45 +2,45 @@
 
 namespace Modules\Notifications\Providers;
 
-use Nwidart\Modules\Support\ModuleServiceProvider;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Support\ServiceProvider;
+use Modules\Notifications\Console\CheckAlertsCommand;
+use Modules\Notifications\Services\NotificationService;
 
-class NotificationsServiceProvider extends ModuleServiceProvider
+class NotificationsServiceProvider extends ServiceProvider
 {
-    /**
-     * The name of the module.
-     */
-    protected string $name = 'Notifications';
+    protected string $moduleName      = 'Notifications';
+    protected string $moduleNameLower = 'notifications';
 
-    /**
-     * The lowercase version of the module name.
-     */
-    protected string $nameLower = 'notifications';
+    public function boot(): void
+    {
+        $this->registerViews();
+        $this->loadMigrationsFrom(module_path($this->moduleName, 'database/migrations'));
+        $this->commands([CheckAlertsCommand::class]);
 
-    /**
-     * Command classes to register.
-     *
-     * @var string[]
-     */
-    // protected array $commands = [];
+        // Run alert checks daily at 8am
+        $this->callAfterResolving(Schedule::class, function (Schedule $schedule) {
+            $schedule->command('afis:check-alerts')->dailyAt('08:00');
+        });
 
-    /**
-     * Provider classes to register.
-     *
-     * @var string[]
-     */
-    protected array $providers = [
-        EventServiceProvider::class,
-        RouteServiceProvider::class,
-    ];
+        \Livewire\Livewire::component('afis-notification-centre', \Modules\Notifications\Livewire\NotificationCentre::class);
+        \Livewire\Livewire::component('afis-notification-bell',   \Modules\Notifications\Livewire\NotificationBell::class);
+    }
 
-    /**
-     * Define module schedules.
-     * 
-     * @param $schedule
-     */
-    // protected function configureSchedules(Schedule $schedule): void
-    // {
-    //     $schedule->command('inspire')->hourly();
-    // }
+    public function register(): void
+    {
+        $this->app->register(EventServiceProvider::class);
+        $this->app->register(RouteServiceProvider::class);
+
+        // Bind as singleton — stateless service
+        $this->app->singleton(NotificationService::class);
+    }
+
+    protected function registerViews(): void
+    {
+        $this->loadViewsFrom(
+            module_path($this->moduleName, 'resources/views'),
+            $this->moduleNameLower
+        );
+    }
 }

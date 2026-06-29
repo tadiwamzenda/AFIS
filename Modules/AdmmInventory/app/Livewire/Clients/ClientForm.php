@@ -13,11 +13,14 @@ class ClientForm extends Component
 
     public string $name            = '';
     public string $navixy_account_id = '';
+    public int    $navixy_instance        = 1;
+    public string $navixy_security_group_id = '';
     public string $contact_person  = '';
     public string $contact_email   = '';
     public string $contact_phone   = '';
     public bool   $is_active       = true;
     public string $notes           = '';
+
 
     protected function rules(): array
     {
@@ -28,6 +31,8 @@ class ClientForm extends Component
         return [
             'name'              => ['required', 'string', 'max:255'],
             'navixy_account_id' => ['required', 'integer', $accountUnique],
+            'navixy_instance'         => ['required', 'in:1,2'],
+            'navixy_security_group_id'=> ['nullable', 'integer'],
             'contact_person'    => ['nullable', 'string', 'max:255'],
             'contact_email'     => ['nullable', 'email', 'max:255'],
             'contact_phone'     => ['nullable', 'string', 'max:20'],
@@ -43,6 +48,8 @@ class ClientForm extends Component
             $this->client           = $client;
             $this->name             = $client->name;
             $this->navixy_account_id = (string) $client->navixy_account_id;
+            $this->navixy_instance         = $client->navixy_instance ?? 1;
+            $this->navixy_security_group_id = (string) ($client->navixy_security_group_id ?? '');
             $this->contact_person   = $client->contact_person ?? '';
             $this->contact_email    = $client->contact_email  ?? '';
             $this->contact_phone    = $client->contact_phone  ?? '';

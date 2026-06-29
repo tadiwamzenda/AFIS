@@ -12,143 +12,110 @@ class NavixyDataService
 
     public function __construct(private PipelineAuthService $auth)
     {
-        $this->baseUrl = rtrim(config('auth-module.navixy_base_url', 'https://api.navixy.com/v2'), '/');
+        $this->baseUrl = rtrim(config('auth-module.navixy_base_url', 'https://api.us.navixy.com/v2'), '/');
     }
 
-    // ─── Trackers ─────────────────────────────────────────────────────────────
-
-    public function getTrackers(): array
+    public function getTrackers(int $instance = 1): array
     {
-        $response = $this->get('tracker/list');
+        $response = $this->post('tracker/list', [], $instance);
         return $response['list'] ?? [];
     }
 
-    public function getLastGpsPoints(array $trackerIds): array
-{
-    if (empty($trackerIds)) return [];
+    public function getLastGpsPoints(array $trackerIds, int $instance = 1): array
+    {
+        if (empty($trackerIds)) return [];
 
-    try {
-        // Call one at a time — more reliable across Navixy account types
         $results = [];
         foreach ($trackerIds as $id) {
             try {
-                $response = $this->post('tracker/get_last_gps_point', [
-                    'tracker_id' => $id,
-                ]);
-                if (!empty($response['value'])) {
-                    $results[] = array_merge($response['value'], ['tracker_id' => $id]);
+                $hash     = $this->auth->getHash($instance);
+                $response = Http::timeout(30)
+                    ->withHeaders(['Content-Type' => 'application/json'])
+                    ->post("{$this->baseUrl}/tracker/get_last_gps_point", [
+                        'hash'       => $hash,
+                        'tracker_id' => $id,
+                    ]);
+                $data = $response->json();
+                if (!empty($data['value'])) {
+                    $results[] = array_merge($data['value'], ['tracker_id' => $id]);
                 }
             } catch (\Throwable $e) {
-                // Skip individual tracker failures silently
-                \Illuminate\Support\Facades\Log::debug("AfisPipeline: skipped last GPS for tracker {$id}", ['error' => $e->getMessage()]);
+                Log::debug("AfisPipeline: skipped last GPS for tracker {$id}", ['error' => $e->getMessage()]);
             }
         }
         return $results;
-    } catch (\Throwable $e) {
-        return [];
     }
-}
 
-    // ─── Trips ────────────────────────────────────────────────────────────────
+    public function getTrips(int $trackerId, Carbon $from, Carbon $to, int $instance = 1): array
+    {
+        try {
+            $hash     = $this->auth->getHash($instance);
+            $response = Http::timeout(30)
+                ->withHeaders(['Content-Type' => 'application/json'])
+                ->post("{$this->baseUrl}/track/list", [
+                    'hash'       => $hash,
+                    'tracker_id' => $trackerId,
+                    'from'       => $from->format('Y-m-d H:i:s'),
+                    'to'         => $to->format('Y-m-d H:i:s'),
+                    'filter'     => false,
+                ]);
+            $data = $response->json();
+            if (empty($data['success'])) {
+                Log::warning("AfisPipeline: track/list failed", ['response' => $data]);
+                return [];
+            }
+            return $data['list'] ?? [];
+        } catch (\Throwable $e) {
+            Log::warning("AfisPipeline: trips fetch failed for tracker {$trackerId}", ['error' => $e->getMessage()]);
+            return [];
+        }
+    }
 
-  public function getTrips(int $trackerId, Carbon $from, Carbon $to): array
-{
-    try {
-        $hash = $this->auth->getHash();
+    public function getEvents(int $trackerId, Carbon $from, Carbon $to, int $instance = 1): array
+    {
+        try {
+            $hash     = $this->auth->getHash($instance);
+            $response = Http::timeout(30)
+                ->withHeaders(['Content-Type' => 'application/json'])
+                ->post("{$this->baseUrl}/event/log/list", [
+                    'hash'       => $hash,
+                    'tracker_id' => $trackerId,
+                    'from'       => $from->format('Y-m-d H:i:s'),
+                    'to'         => $to->format('Y-m-d H:i:s'),
+                ]);
+            $data = $response->json();
+            if (empty($data['success'])) {
+                Log::warning("AfisPipeline: event/log/list failed", ['response' => $data]);
+                return [];
+            }
+            return $data['list'] ?? [];
+        } catch (\Throwable $e) {
+            Log::warning("AfisPipeline: events fetch failed for tracker {$trackerId}", ['error' => $e->getMessage()]);
+            return [];
+        }
+    }
+
+    // ─── Internal helpers ─────────────────────────────────────────────────────
+
+    private function post(string $endpoint, array $data = [], int $instance = 1): array
+    {
+        $data['hash'] = $this->auth->getHash($instance);
 
         $response = Http::timeout(30)
             ->withHeaders(['Content-Type' => 'application/json'])
-            ->post("{$this->baseUrl}/track/list", [
-                'hash'       => $hash,
-                'tracker_id' => $trackerId,
-                'from'       => $from->format('Y-m-d H:i:s'),
-                'to'         => $to->format('Y-m-d H:i:s'),
-                'filter'     => false,
-            ]);
+            ->post("{$this->baseUrl}/{$endpoint}", $data);
 
-        $data = $response->json();
+        $result = $response->json();
 
-        if (empty($data['success'])) {
-            Log::warning("AfisPipeline: track/list failed", ['response' => $data]);
-            return [];
+        if (!empty($result['status']['code']) && $result['status']['code'] === 101) {
+            $this->auth->clearHash($instance);
+            $data['hash'] = $this->auth->getHash($instance);
+            $response = Http::timeout(30)
+                ->withHeaders(['Content-Type' => 'application/json'])
+                ->post("{$this->baseUrl}/{$endpoint}", $data);
+            $result = $response->json();
         }
 
-        return $data['list'] ?? [];
-
-    } catch (\Throwable $e) {
-        Log::warning("AfisPipeline: trips fetch failed for tracker {$trackerId}", [
-            'error' => $e->getMessage(),
-        ]);
-        return [];
-    }
-}
-
-    // ─── Events ───────────────────────────────────────────────────────────────
-
-    public function getEvents(int $trackerId, Carbon $from, Carbon $to): array
-{
-    try {
-        $hash = $this->auth->getHash();
-
-        $response = Http::timeout(30)
-            ->withHeaders(['Content-Type' => 'application/json'])
-            ->post("{$this->baseUrl}/event/log/list", [
-                'hash'       => $hash,
-                'tracker_id' => $trackerId,
-                'from'       => $from->format('Y-m-d H:i:s'),
-                'to'         => $to->format('Y-m-d H:i:s'),
-            ]);
-
-        $data = $response->json();
-
-        if (empty($data['success'])) {
-            Log::warning("AfisPipeline: event/log/list failed", ['response' => $data]);
-            return [];
-        }
-
-        return $data['list'] ?? [];
-
-    } catch (\Throwable $e) {
-        Log::warning("AfisPipeline: events fetch failed for tracker {$trackerId}", [
-            'error' => $e->getMessage(),
-        ]);
-        return [];
-    }
-}
-
-    // ─── HTTP helpers ─────────────────────────────────────────────────────────
-
-    private function get(string $endpoint, array $params = []): array
-    {
-        $params['hash'] = $this->auth->getHash();
-
-        $response = Http::timeout(30)->get("{$this->baseUrl}/{$endpoint}", $params);
-
-        return $this->handleResponse($response, $endpoint);
-    }
-
-    private function post(string $endpoint, array $data = []): array
-    {
-        $data['hash'] = $this->auth->getHash();
-
-        $response = Http::timeout(30)->asForm()->post("{$this->baseUrl}/{$endpoint}", $data);
-
-        return $this->handleResponse($response, $endpoint);
-    }
-
-    private function handleResponse($response, string $endpoint): array
-    {
-        $data = $response->json();
-
-        if (!empty($data['status']['code']) && $data['status']['code'] === 101) {
-            $this->auth->clearHash();
-            throw new \RuntimeException("Navixy session expired on [{$endpoint}]");
-        }
-
-        if (empty($data['success'])) {
-            throw new \RuntimeException("Navixy error on [{$endpoint}]: " . ($data['status']['description'] ?? 'unknown'));
-        }
-
-        return $data;
+        return $result;
     }
 }
