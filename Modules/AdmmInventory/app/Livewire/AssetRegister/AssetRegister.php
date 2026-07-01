@@ -137,7 +137,9 @@ class AssetRegister extends Component
             ->when($this->fLocation,    fn($q) => $q->where('location',            $this->fLocation))
             ->when($this->fTechnician,  fn($q) => $q->where('technician',         'like', "%{$this->fTechnician}%"))
             ->orderByRaw("FIELD(location, 'CLIENT', 'STOCK', 'LOST')")
+            ->orderByRaw("CASE WHEN installation_date IS NULL THEN 1 ELSE 0 END")
             ->orderBy('installation_date')
+            ->orderBy('id')
             ->get();
 
         $stats = [
