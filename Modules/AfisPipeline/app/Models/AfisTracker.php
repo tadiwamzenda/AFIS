@@ -11,7 +11,7 @@ class AfisTracker extends Model
 {
     protected $table    = 'afis_trackers';
     protected $fillable = [
-        'client_id', 'navixy_tracker_id', 'label',
+        'client_id', 'navixy_tracker_id','imei', 'label',
         'model_name', 'vehicle_registration', 'is_active',
         'last_active_at', 'last_lat', 'last_lng', 'last_synced_at',
     ];

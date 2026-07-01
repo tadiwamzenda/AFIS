@@ -48,17 +48,16 @@ class DeviceRemoveWizard extends Component
     }
 
     public function render()
-    {
-        $devices = GpsDevice::with('simCard', 'client')
-            ->where('location_context', 'client_assigned')
-            ->where('status', 'installed_client')
-            ->orderBy('serial_number')
-            ->get();
+{
+    $devices = GpsDevice::with('simCard', 'client')
+        ->where('status', 'installed')
+        ->orderBy('imei')
+        ->get();
 
-        $selectedDevice = $this->deviceId
-            ? GpsDevice::with('simCard', 'client')->find($this->deviceId)
-            : null;
+    $selectedDevice = $this->deviceId
+        ? GpsDevice::with('simCard', 'client')->find($this->deviceId)
+        : null;
 
-        return view('admmworkflows::livewire.device-remove', compact('devices', 'selectedDevice'));
-    }
+    return view('admmworkflows::livewire.device-remove', compact('devices', 'selectedDevice'));
+}
 }

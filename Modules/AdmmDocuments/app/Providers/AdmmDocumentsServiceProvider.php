@@ -13,7 +13,8 @@ class AdmmDocumentsServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
-        $this->registerViews();
+    \Livewire\Livewire::component('admm-asset-import', \Modules\AdmmDocuments\Livewire\AssetImportWizard::class);
+    $this->registerViews();
 
         $this->loadMigrationsFrom(
             module_path($this->moduleName, 'database/migrations')

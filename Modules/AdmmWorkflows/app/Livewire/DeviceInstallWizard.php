@@ -57,9 +57,9 @@ class DeviceInstallWizard extends Component
 
     public function render()
     {
-        $devices = GpsDevice::where('location_context', 'internal_stock')
-            ->where('status', 'in_office_stock')
-            ->orderBy('serial_number')
+        // NEW:
+        $devices = GpsDevice::where('status', 'in_office_stock')
+            ->orderBy('imei')
             ->get();
 
         $clients = Client::active()->orderBy('name')->get();

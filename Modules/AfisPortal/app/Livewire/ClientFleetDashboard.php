@@ -61,16 +61,26 @@ class ClientFleetDashboard extends Component
             if (empty($trackers)) return;
 
             foreach ($trackers as $t) {
-                AfisTracker::updateOrCreate(
+                $imei = $t['source']['device_id'] ?? null;
+
+                $tracker = AfisTracker::updateOrCreate(
                     ['navixy_tracker_id' => $t['id']],
                     [
                         'client_id'      => $this->clientId,
                         'label'          => $t['label'] ?? 'Unknown',
                         'model_name'     => $t['source']['model'] ?? null,
+                        'imei'           => $imei,
                         'is_active'      => !($t['source']['blocked'] ?? false),
                         'last_synced_at' => now(),
                     ]
                 );
+
+                // Auto-link to ADMM GPS device by IMEI — shows in device listing
+                if ($imei) {
+                    \Modules\AdmmInventory\Models\GpsDevice::where('imei', $imei)
+                        ->where('status', '!=', 'decommissioned')
+                        ->update(['status' => 'installed']);
+                }
             }
 
             AfisSyncLog::create([

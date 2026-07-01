@@ -6,102 +6,121 @@ use Livewire\Component;
 use Modules\AdmmInventory\Models\Client;
 use Modules\AdmmInventory\Models\GpsDevice;
 use Modules\AdmmInventory\Models\SimCard;
-use Modules\Core\Contracts\AuditLogInterface;
+use Modules\AuditLog\Services\AuditLogService;
+use Illuminate\Support\Facades\Auth;
 
 class GpsDeviceForm extends Component
 {
     public ?GpsDevice $device = null;
-    public bool $isEditing    = false;
 
-    public string  $serial_number        = '';
-    public string  $model                = '';
-    public string  $firmware_version     = '';
-    public string  $purchase_date        = '';
-    public string  $warranty_expiry_date = '';
-    public string  $status               = 'in_office_stock';
-    public string  $location_context     = 'internal_stock';
-    public ?int    $client_id            = null;
-    public ?int    $sim_card_id          = null;
-    public string  $vehicle_registration = '';
-    public string  $notes                = '';
+    public string $imei                = '';
+    public string $model               = '';
+    public string $device_type         = '';
+    public string $vehicle_registration = '';
+    public string $vehicle_make        = '';
+    public string $fleet_number        = '';
+    public string $status              = 'in_office_stock';
+    public string $location_context    = 'in_office_stock';
+    public string $technician          = '';
+    public string $installed_at        = '';
+    public string $notes               = '';
+    public ?int   $client_id           = null;
+    public ?int   $sim_card_id         = null;
 
     protected function rules(): array
     {
-        $serialUnique = $this->isEditing
-            ? 'unique:adm_gps_devices,serial_number,' . $this->device?->id
-            : 'unique:adm_gps_devices,serial_number';
+        $imeiUnique = $this->device?->exists
+            ? 'unique:adm_gps_devices,imei,' . $this->device->id
+            : 'unique:adm_gps_devices,imei';
 
         return [
-            'serial_number'        => ['required', 'string', 'max:100', $serialUnique],
-            'model'                => ['required', 'string', 'max:100'],
-            'firmware_version'     => ['nullable', 'string', 'max:50'],
-            'purchase_date'        => ['nullable', 'date'],
-            'warranty_expiry_date' => ['nullable', 'date'],
-            'status'               => ['required', 'in:installed_client,in_office_stock,under_repair,awaiting_disposal,decommissioned,lost_stolen'],
-            'location_context'     => ['required', 'in:client_assigned,internal_stock,unallocated'],
+            'imei'                 => ['required', 'string', 'max:20', $imeiUnique],
+            'model'                => ['nullable', 'string', 'max:100'],
+            'device_type'          => ['nullable', 'string', 'max:50'],
+            'vehicle_registration' => ['nullable', 'string', 'max:20'],
+            'vehicle_make'         => ['nullable', 'string', 'max:100'],
+            'fleet_number'         => ['nullable', 'string', 'max:50'],
+            'status'               => ['required', 'in:' . implode(',', array_keys(GpsDevice::STATUSES))],
+            'location_context'     => ['nullable', 'string', 'max:100'],
             'client_id'            => ['nullable', 'exists:clients,id'],
             'sim_card_id'          => ['nullable', 'exists:adm_sim_cards,id'],
-            'vehicle_registration' => ['nullable', 'string', 'max:20'],
+            'technician'           => ['nullable', 'string', 'max:100'],
+            'installed_at'         => ['nullable', 'date'],
             'notes'                => ['nullable', 'string', 'max:1000'],
         ];
     }
 
-    public function mount(?GpsDevice $device = null): void
+    public function mount(?int $deviceId = null): void
     {
-        if ($device && $device->exists) {
-            $this->isEditing            = true;
-            $this->device               = $device;
-            $this->serial_number        = $device->serial_number;
-            $this->model                = $device->model;
-            $this->firmware_version     = $device->firmware_version     ?? '';
-            $this->purchase_date        = $device->purchase_date?->format('Y-m-d')        ?? '';
-            $this->warranty_expiry_date = $device->warranty_expiry_date?->format('Y-m-d') ?? '';
-            $this->status               = $device->status;
-            $this->location_context     = $device->location_context;
-            $this->client_id            = $device->client_id;
-            $this->sim_card_id          = $device->sim_card_id;
-            $this->vehicle_registration = $device->vehicle_registration ?? '';
-            $this->notes                = $device->notes ?? '';
+        $this->device = $deviceId ? GpsDevice::findOrFail($deviceId) : new GpsDevice();
+
+        if ($this->device->exists) {
+            $this->imei                = $this->device->imei ?? '';
+            $this->model               = $this->device->model ?? '';
+            $this->device_type         = $this->device->device_type ?? '';
+            $this->vehicle_registration = $this->device->vehicle_registration ?? '';
+            $this->vehicle_make        = $this->device->vehicle_make ?? '';
+            $this->fleet_number        = $this->device->fleet_number ?? '';
+            $this->status              = $this->device->status ?? 'in_office_stock';
+            $this->location_context    = $this->device->location_context ?? 'in_office_stock';
+            $this->client_id           = $this->device->client_id;
+            $this->sim_card_id         = $this->device->sim_card_id;
+            $this->technician          = $this->device->technician ?? '';
+            $this->installed_at        = $this->device->installed_at?->format('Y-m-d') ?? '';
+            $this->notes               = $this->device->notes ?? '';
         }
     }
 
-    public function save(AuditLogInterface $auditLog): void
+    public function save(): void
     {
-        $data = $this->validate();
+        $this->validate();
 
-        foreach (['purchase_date', 'warranty_expiry_date'] as $field) {
-            if (empty($data[$field])) $data[$field] = null;
-        }
-        if (empty($data['client_id']))   $data['client_id']   = null;
-        if (empty($data['sim_card_id'])) $data['sim_card_id'] = null;
+        $data = [
+            'imei'                 => $this->imei,
+            'model'                => $this->model ?: null,
+            'device_type'          => $this->device_type ?: null,
+            'vehicle_registration' => $this->vehicle_registration ?: null,
+            'vehicle_make'         => $this->vehicle_make ?: null,
+            'fleet_number'         => $this->fleet_number ?: null,
+            'status'               => $this->status,
+            'client_id'            => $this->client_id ?: null,
+            'sim_card_id'          => $this->sim_card_id ?: null,
+            'technician'           => $this->technician ?: null,
+            'installed_at'         => $this->installed_at ?: null,
+            'notes'                => $this->notes ?: null,
+        ];
 
-        if ($this->isEditing) {
-            $before = $this->device->toArray();
-            $this->device->update($data);
+        $isNew = !$this->device->exists;
+        $this->device->fill($data);
+        $this->device->save();
 
-            $auditLog->record(
-                event: 'gps_device.updated',
-                module: 'AdmmInventory',
-                data: ['before' => $before, 'after' => $this->device->fresh()->toArray()],
-                entityType: 'GpsDevice',
-                entityId: $this->device->id
-            );
+        app(AuditLogService::class)->record(
+            event:      $isNew ? 'gps_device.created' : 'gps_device.updated',
+            module:     'AdmmInventory',
+            data:       $data,
+            entityType: GpsDevice::class,
+            entityId:   $this->device->id
+        );
 
-            session()->flash('success', "Device {$this->device->serial_number} updated successfully.");
-        } else {
-            $device = GpsDevice::create($data);
+        session()->flash('success', 'GPS device ' . ($isNew ? 'added' : 'updated') . ' successfully.');
+        $this->redirect(route('admin.admm.gps-devices.index'));
+    }
 
-            $auditLog->record(
-                event: 'gps_device.created',
-                module: 'AdmmInventory',
-                data: $device->toArray(),
-                entityType: 'GpsDevice',
-                entityId: $device->id
-            );
+    public function delete(): void
+    {
+        if (!$this->device->exists) return;
 
-            session()->flash('success', "Device {$device->serial_number} created successfully.");
-        }
+        app(AuditLogService::class)->record(
+            event:      'gps_device.deleted',
+            module:     'AdmmInventory',
+            data:       ['imei' => $this->device->imei],
+            entityType: GpsDevice::class,
+            entityId:   $this->device->id
+        );
 
+        $this->device->delete();
+
+        session()->flash('success', 'GPS device deleted successfully.');
         $this->redirect(route('admin.admm.gps-devices.index'));
     }
 
@@ -109,9 +128,9 @@ class GpsDeviceForm extends Component
     {
         return view('admminventory::livewire.gps-devices.form', [
             'clients'  => Client::active()->orderBy('name')->get(),
-            'simCards' => SimCard::where('location_context', '!=', 'client_assigned')
-                ->orWhere('id', $this->sim_card_id)
-                ->orderBy('iccid')
+            'simCards' => SimCard::whereNull('client_id')
+                ->orWhere('client_id', $this->client_id)
+                ->orderBy('msisdn')
                 ->get(),
         ]);
     }

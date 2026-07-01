@@ -11,6 +11,7 @@ class AdmmInventoryServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        \Livewire\Livewire::component('admm-asset-register', \Modules\AdmmInventory\Livewire\AssetRegister\AssetRegister::class);
         $this->registerViews();
         $this->loadMigrationsFrom(module_path($this->moduleName, 'database/migrations'));
 

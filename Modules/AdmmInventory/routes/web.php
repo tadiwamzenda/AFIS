@@ -37,5 +37,8 @@ Route::middleware(['auth'])->prefix('admin/admm')->name('admin.admm.')->group(fu
         Route::get('/create',             [AccessoryController::class, 'create'])->name('create');
         Route::get('/{accessory}/edit',   [AccessoryController::class, 'edit'])->name('edit');
     });
-
+    //Asset Inventory
+    Route::get('/asset-register', function () {
+        return view('admminventory::asset-register.index');
+    })->name('asset-register.index');
 });

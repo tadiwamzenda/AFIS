@@ -43,13 +43,7 @@ class AdminDashboard extends Component
                 ->limit(10)
                 ->get(),
 
-            'warrantyExpiring'  => GpsDevice::whereNotNull('warranty_expiry_date')
-                ->where('warranty_expiry_date', '<=', $thirtyDays)
-                ->whereNotIn('status', ['decommissioned', 'lost_stolen'])
-                ->with('client')
-                ->orderBy('warranty_expiry_date')
-                ->limit(10)
-                ->get(),
+            'warrantyExpiring'  => collect(),
 
             'lostAssets' => [
                 'sim_cards'   => SimCard::where('status', 'lost')->count(),
