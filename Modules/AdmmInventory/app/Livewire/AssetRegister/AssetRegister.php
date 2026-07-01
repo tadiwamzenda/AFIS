@@ -53,33 +53,33 @@ class AssetRegister extends Component
 
     // ─── Save all changes ─────────────────────────────────────────────────────
     public function saveAll(): void
-    {
-        $savedCount = 0;
+{
+    $savedCount = 0;
 
-        foreach ($this->changes as $id => $fields) {
-            $record = AssetRecord::find($id);
-            if (!$record) continue;
+    foreach ($this->changes as $id => $fields) {
+        $record = AssetRecord::find($id);
+        if (!$record) continue;
 
-            $oldValues = array_intersect_key($record->toArray(), $fields);
-            $record->update($fields);
+        $oldValues = array_intersect_key($record->toArray(), $fields);
+        $record->update($fields);
 
-            app(AuditLogService::class)->record(
-                event:      'asset_record.updated',
-                module:     'AdmmInventory',
-                data:       ['old' => $oldValues, 'new' => $fields],
-                entityType: AssetRecord::class,
-                entityId:   $id,
-            );
+        app(AuditLogService::class)->record(
+            event:      'asset_record.updated',
+            module:     'AdmmInventory',
+            data:       ['old' => $oldValues, 'new' => $fields],
+            entityType: AssetRecord::class,
+            entityId:   $id,
+        );
 
-            $savedCount++;
-        }
-
-        $this->changes    = [];
-        $this->hasChanges = false;
-
-        session()->flash('success', "{$savedCount} record(s) saved successfully.");
+        $savedCount++;
     }
 
+    $this->changes    = [];
+    $this->hasChanges = false;
+
+    $this->dispatch('changes-saved');
+    session()->flash('success', "{$savedCount} record(s) saved successfully.");
+}
     // ─── Discard changes ─────────────────────────────────────────────────────
     public function discardChanges(): void
     {
@@ -95,7 +95,6 @@ class AssetRegister extends Component
             'location'         => 'STOCK',
         ]);
 
-        $this->resetPage();
         session()->flash('success', 'New row added. Fill in the details and save.');
     }
 
@@ -139,7 +138,7 @@ class AssetRegister extends Component
             ->when($this->fTechnician,  fn($q) => $q->where('technician',         'like', "%{$this->fTechnician}%"))
             ->orderByRaw("FIELD(location, 'CLIENT', 'STOCK', 'LOST')")
             ->orderBy('installation_date')
-            ->paginate(50);
+            ->get();
 
         $stats = [
             'total'  => AssetRecord::count(),
