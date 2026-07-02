@@ -98,34 +98,6 @@ class ClientFleetDashboard extends Component
         }
     }
 
-    public function generateFleetReport(): void
-    {
-        $this->generating = true;
-        $this->message    = '';
-
-        GenerateAiReportJob::dispatch(
-            reportType: 'fleet_intelligence',
-            clientId:   $this->clientId,
-            options:    ['days' => 30, 'use_cache' => false]
-        );
-
-        $this->message    = 'Fleet intelligence report queued. Available in 30-60 seconds.';
-        $this->generating = false;
-    }
-
-    public function generatePredictiveReport(): void
-    {
-        $this->generating = true;
-
-        GenerateAiReportJob::dispatch(
-            reportType: 'predictive_intelligence',
-            clientId:   $this->clientId,
-            options:    ['days' => 90, 'use_cache' => false]
-        );
-
-        $this->message    = 'Predictive intelligence report queued. Available in 30-60 seconds.';
-        $this->generating = false;
-    }
 
     public function render()
     {

@@ -10,29 +10,47 @@
 </head>
 <body class="bg-gray-50 font-sans antialiased">
 
-    {{-- Top Nav --}}
     <nav class="bg-white border-b border-gray-200 sticky top-0 z-40">
         <div class="max-w-screen-xl mx-auto px-6">
-            <div class="h-16 flex items-center justify-between">
+            <div class="h-16 flex items-center">
 
-                <div class="flex items-center gap-2">
+                {{-- Left: Logo --}}
+                <div class="flex items-center gap-2 w-48 flex-shrink-0">
                     <span class="text-base font-bold text-gray-900">Bantu Track</span>
                     <span class="text-xs font-semibold text-brand-500 bg-brand-50 px-2 py-0.5 rounded-full">Fleet Portal</span>
                 </div>
 
-                <div class="hidden md:flex items-center gap-1">
-                    <a href="{{ route('client.dashboard') }}" class="px-3 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors">Dashboard</a>
-                    <a href="{{ route('client.intelligence.dashboard') }}" class="px-3 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors">Intelligence</a>
-                    <a href="{{ route('client.incidents.log') }}" class="px-3 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors">Incidents</a>
-                    <a href="{{ route('client.incidents.archive') }}" class="px-3 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors">Reports</a>
+                {{-- Centre: Nav --}}
+                <div class="flex-1 flex items-center justify-center gap-1">
+                    <a href="{{ route('client.dashboard') }}"
+                        class="px-4 py-2 rounded-lg text-sm font-medium transition-colors
+                        {{ request()->routeIs('client.dashboard') ? 'text-brand-600 bg-brand-50 border-b-2 border-brand-500' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50' }}">
+                        Dashboard
+                    </a>
+                    <a href="{{ route('client.intelligence.dashboard') }}"
+                        class="px-4 py-2 rounded-lg text-sm font-medium transition-colors
+                        {{ request()->routeIs('client.intelligence.*') ? 'text-brand-600 bg-brand-50 border-b-2 border-brand-500' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50' }}">
+                        Intelligence
+                    </a>
+                    <a href="{{ route('client.incidents.archive') }}"
+                        class="px-4 py-2 rounded-lg text-sm font-medium transition-colors
+                        {{ request()->routeIs('client.incidents.*') ? 'text-brand-600 bg-brand-50 border-b-2 border-brand-500' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50' }}">
+                        Incidents
+                    </a>
+                    <a href="{{ route('client.reports') }}"
+                        class="px-4 py-2 rounded-lg text-sm font-medium transition-colors
+                        {{ request()->routeIs('client.reports') ? 'text-brand-600 bg-brand-50 border-b-2 border-brand-500' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50' }}">
+                        Reports
+                    </a>
                 </div>
 
-                <div class="flex items-center gap-3">
+                {{-- Right: User --}}
+                <div class="flex items-center gap-3 w-48 flex-shrink-0 justify-end">
                     <div class="hidden md:block text-right">
                         <p class="text-sm font-medium text-gray-800">{{ auth()->user()->name ?? 'User' }}</p>
                         <p class="text-xs text-gray-400">Fleet Manager</p>
                     </div>
-                    <div class="w-9 h-9 rounded-full bg-brand-500 flex items-center justify-center text-white text-sm font-semibold">
+                    <div class="w-9 h-9 min-w-9 min-h-9 rounded-full bg-brand-500 flex items-center justify-center text-white text-sm font-semibold flex-shrink-0">
                         {{ strtoupper(substr(auth()->user()->name ?? 'U', 0, 1)) }}
                     </div>
                     <form method="POST" action="{{ route('logout') }}">
