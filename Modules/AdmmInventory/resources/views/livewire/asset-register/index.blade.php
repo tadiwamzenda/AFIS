@@ -1,4 +1,4 @@
-<div class="space-y-3">
+<div class="flex flex-col" style="height: calc(100vh - 130px);">
 
     @if(session('success'))
         <div class="rounded-lg bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-700">
@@ -7,7 +7,7 @@
     @endif
 
     {{-- Stats + Actions --}}
-    <div class="flex items-center gap-4 flex-wrap">
+    <div class="flex items-center gap-4 flex-wrap flex-shrink-0 mb-3">
         <div class="flex items-center gap-3 text-sm text-gray-500">
             <span class="font-medium text-gray-800">{{ number_format($stats['total']) }} total</span>
             <span class="text-green-600 font-medium">{{ number_format($stats['client']) }} client</span>
@@ -35,9 +35,9 @@
     </div>
 
     {{-- Table --}}
-    <div class="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+    <div class="bg-white rounded-xl border border-gray-200 overflow-auto flex-1">
         <table class="text-xs w-max min-w-full">
-            <thead>
+            <thead class="sticky top-0 z-30">
                 <tr class="bg-gray-800 text-white">
                     <th class="sticky left-0 z-20 bg-gray-800 px-2 py-2 text-left font-medium whitespace-nowrap w-8">#</th>
                     <th class="px-2 py-2 text-left font-medium whitespace-nowrap">Installation Date</th>
