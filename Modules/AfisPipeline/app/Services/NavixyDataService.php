@@ -118,4 +118,79 @@ class NavixyDataService
 
         return $result;
     }
+
+    // ─── Tracker groups ───────────────────────────────────────────────────────
+
+    public function getTrackerGroups(int $instance = 1): array
+    {
+        $data = $this->post('tracker/group/list', [], $instance);
+        return $data['list'] ?? [];
+    }
+
+    // ─── Daily mileage ────────────────────────────────────────────────────────
+
+    public function getDailyMileage(array $trackerIds, Carbon $from, Carbon $to, int $instance = 1): array
+    {
+        if (empty($trackerIds)) return [];
+
+        try {
+            $hash     = $this->auth->getHash($instance);
+            $response = Http::timeout(60)
+                ->withHeaders(['Content-Type' => 'application/json'])
+                ->post("{$this->baseUrl}/tracker/stats/mileage/read", [
+                    'hash'     => $hash,
+                    'trackers' => $trackerIds,
+                    'from'     => $from->format('Y-m-d H:i:s'),
+                    'to'       => $to->format('Y-m-d H:i:s'),
+                ]);
+
+            $data = $response->json();
+            if (empty($data['success'])) {
+                Log::warning("NavixyDataService: mileage read failed", ['response' => $data]);
+                return [];
+            }
+            return $data['result'] ?? [];
+        } catch (\Throwable $e) {
+            Log::warning("NavixyDataService: getDailyMileage failed", ['error' => $e->getMessage()]);
+            return [];
+        }
+    }
+
+    // ─── Alerts / notification history ───────────────────────────────────────
+
+    public function getAlerts(array $trackerIds, Carbon $from, Carbon $to, int $instance = 1): array
+    {
+        if (empty($trackerIds)) return [];
+
+        try {
+            $hash     = $this->auth->getHash($instance);
+            $response = Http::timeout(60)
+                ->withHeaders(['Content-Type' => 'application/json'])
+                ->post("{$this->baseUrl}/history/tracker/list", [
+                    'hash'     => $hash,
+                    'trackers' => $trackerIds,
+                    'from'     => $from->format('Y-m-d H:i:s'),
+                    'to'       => $to->format('Y-m-d H:i:s'),
+                ]);
+
+            $data = $response->json();
+            if (empty($data['success'])) {
+                Log::warning("NavixyDataService: alerts list failed", ['response' => $data]);
+                return [];
+            }
+            return $data['list'] ?? [];
+        } catch (\Throwable $e) {
+            Log::warning("NavixyDataService: getAlerts failed", ['error' => $e->getMessage()]);
+            return [];
+        }
+    }
+
+    // ─── All trackers (online AND offline) ───────────────────────────────────
+
+    public function getAllTrackers(int $instance = 1): array
+    {
+        // tracker/list returns all trackers regardless of online status
+        $data = $this->post('tracker/list', [], $instance);
+        return $data['list'] ?? [];
+    }
 }

@@ -5,6 +5,7 @@ namespace Modules\AdmmInventory\Livewire\Clients;
 use Livewire\Component;
 use Livewire\WithPagination;
 use Modules\AdmmInventory\Models\Client;
+use Modules\Core\Contracts\AuditLogInterface;
 
 class ClientIndex extends Component
 {
@@ -21,6 +22,22 @@ class ClientIndex extends Component
     public function updatingSearch(): void { $this->resetPage(); }
     public function updatingStatusFilter(): void { $this->resetPage(); }
 
+    public function delete(int $id, AuditLogInterface $auditLog): void
+    {
+        $client = Client::findOrFail($id);
+
+        $auditLog->record(
+            event:      'client.deleted',
+            module:     'AdmmInventory',
+            data:       ['name' => $client->name],
+            entityType: 'Client',
+            entityId:   $id
+        );
+
+        $client->delete();
+        session()->flash('success', "{$client->name} deleted successfully.");
+    }
+
     public function render()
     {
         $clients = Client::query()
@@ -32,7 +49,7 @@ class ClientIndex extends Component
             ->when($this->statusFilter !== '', fn($q) =>
                 $q->where('is_active', $this->statusFilter === 'active')
             )
-            ->withCount(['simCards', 'gpsDevices', 'accessories'])
+            ->withCount(['gpsDevices', 'accessories'])
             ->orderBy('name')
             ->paginate(20);
 

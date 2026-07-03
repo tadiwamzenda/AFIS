@@ -5,6 +5,7 @@ namespace Modules\AfisPipeline\Providers;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\ServiceProvider;
 use Modules\AfisPipeline\Console\SyncFleetCommand;
+use Modules\AfisPipeline\Console\SyncTrackerGroupsCommand;
 
 class AfisPipelineServiceProvider extends ServiceProvider
 {
@@ -16,15 +17,19 @@ class AfisPipelineServiceProvider extends ServiceProvider
         $this->registerViews();
         $this->registerConfig();
         $this->loadMigrationsFrom(module_path($this->moduleName, 'database/migrations'));
-        $this->commands([SyncFleetCommand::class]);
+        $this->commands([
+            SyncFleetCommand::class,
+            SyncTrackerGroupsCommand::class,
+        ]);
 
-        // Register scheduler — runs every 15 minutes in production
         $this->callAfterResolving(Schedule::class, function (Schedule $schedule) {
             $schedule->command('afis:sync-fleet')->everyFifteenMinutes();
+            $schedule->command('afis:sync-groups')->daily();
         });
 
         \Livewire\Livewire::component('afis-pipeline-dashboard', \Modules\AfisPipeline\Livewire\SyncDashboard::class);
     }
+
 
     public function register(): void
     {
