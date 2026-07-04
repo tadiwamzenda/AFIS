@@ -4,6 +4,7 @@ namespace Modules\AfisPipeline\Providers;
 
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\ServiceProvider;
+use Modules\AfisPipeline\Console\BackfillTripsCommand;
 use Modules\AfisPipeline\Console\SyncFleetCommand;
 use Modules\AfisPipeline\Console\SyncTrackerGroupsCommand;
 
@@ -20,6 +21,7 @@ class AfisPipelineServiceProvider extends ServiceProvider
         $this->commands([
             SyncFleetCommand::class,
             SyncTrackerGroupsCommand::class,
+            BackfillTripsCommand::class,
         ]);
 
         $this->callAfterResolving(Schedule::class, function (Schedule $schedule) {
