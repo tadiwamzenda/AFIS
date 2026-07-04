@@ -67,7 +67,9 @@ class ClientFleetDashboard extends Component
                     ['navixy_tracker_id' => $t['id']],
                     [
                         'client_id'       => $this->clientId,
-                        'navixy_group_id' => $t['group_id'] ?? null,
+                        'navixy_group_id' => \Modules\AfisPipeline\Models\AfisTrackerGroup::where('navixy_group_id', $t['group_id'] ?? 0)->exists()
+                        ? ($t['group_id'] ?? null)
+                        : null,
                         'label'           => $t['label'] ?? 'Unknown',
                         'model_name'       => $t['source']['model'] ?? null,
                         'imei'            => $imei,
