@@ -530,4 +530,107 @@ TABLE;
 
         return $table;
     }
+    
+    
+    public function fleetIntelligenceFromData(array $data): string
+    {
+        $client     = $data['client'];
+        $from       = $data['from']->format('d M Y');
+        $to         = $data['to']->format('d M Y');
+        $fleetSize  = $data['fleet_size'];
+        $totalKm    = number_format($data['total_mileage'], 2);
+        $weekendKm  = number_format($data['weekend_km'], 2);
+        $afterHrsKm = number_format($data['after_hrs_km'], 2);
+        $speedLimit = $data['speed_limit'];
+
+        $weekendPct  = $data['total_mileage'] > 0
+            ? number_format(($data['weekend_km'] / $data['total_mileage']) * 100, 1)
+            : '0';
+        $afterHrsPct = $data['total_mileage'] > 0
+            ? number_format(($data['after_hrs_km'] / $data['total_mileage']) * 100, 1)
+            : '0';
+
+        $speedingCount  = count($data['speeding']);
+        $speedingList   = collect($data['speeding'])->take(10)->map(fn($v) =>
+            "  - {$v['label']}: top speed {$v['max_speed']} km/h, {$v['speeding_trips']} speeding trips"
+        )->implode("\n");
+
+        $weekendList = collect($data['weekend'])->take(10)->map(fn($v) =>
+            "  - {$v['label']}: {$v['weekend_km']} km ({$v['group']})"
+        )->implode("\n");
+
+        $afterHrsList = collect($data['after_hours'])->take(10)->map(fn($v) =>
+            "  - {$v['label']}: {$v['after_hrs_km']} km ({$v['group']})"
+        )->implode("\n");
+
+        $fuelList = !empty($data['fuel'])
+            ? collect($data['fuel'])->take(10)->map(fn($v) =>
+                "  - {$v['label']}: {$v['fueling_count']} refuels ({$v['fueling_litres']}L)" .
+                ($v['drain_count'] > 0 ? ", {$v['drain_count']} DRAINS ({$v['drain_litres']}L)" : '')
+            )->implode("\n")
+            : "  No fuel sensor data available for this period.";
+
+        $groupList = collect($data['groups'])->map(fn($g) =>
+            "  - {$g['name']}: {$g['count']} vehicles, {$g['mileage']} km, {$g['speeding']} speeding trips"
+        )->implode("\n");
+
+        return <<<PROMPT
+    You are a professional fleet intelligence analyst for Bantu Track, a GPS tracking company in Zimbabwe.
+
+    Analyse the following fleet data and produce a concise, professional AI intelligence report. Keep it focused and actionable — maximum 2 pages when printed.
+
+    ## CLIENT: {$client->name}
+    ## PERIOD: {$from} to {$to}
+
+    ## KEY DATA
+
+    **Fleet Overview:**
+    - Total vehicles: {$fleetSize}
+    - Total mileage: {$totalKm} km
+    - Weekend/holiday driving: {$weekendKm} km ({$weekendPct}% of total)
+    - After hours driving (18:00-06:00): {$afterHrsKm} km ({$afterHrsPct}% of total)
+    - Vehicles exceeding speed limit ({$speedLimit} km/h): {$speedingCount}
+
+    **Speeding vehicles (top 10):**
+    {$speedingList}
+
+    **Weekend/holiday driving (top 10):**
+    {$weekendList}
+
+    **After hours driving (top 10):**
+    {$afterHrsList}
+
+    **Fuel events:**
+    {$fuelList}
+
+    **Sub-group breakdown:**
+    {$groupList}
+
+    ## REQUIRED SECTIONS
+
+    ### 1. EXECUTIVE SUMMARY
+    2-3 paragraphs. What does this data tell us about how this fleet was managed this period? Be direct.
+
+    ### 2. KEY RISKS IDENTIFIED
+    List the 3-5 most significant risks in order of severity. Each risk: what it is, which vehicles, what it means for the organisation.
+
+    ### 3. COMPLIANCE SCORECARD
+    | Area | Score | Notes |
+    Rate each: ✅ PASS | ⚠ WARNING | ❌ FAIL
+    - Speed policy compliance
+    - Working hours policy
+    - Weekend/holiday usage
+    - Fuel management (if applicable)
+    - Overall fleet discipline
+
+    ### 4. PRIORITY ACTIONS
+    Exactly 5 actions the fleet manager should take THIS WEEK. Number them. Be specific — name vehicles where relevant.
+
+    ### 5. FLEET RISK RATING
+    Overall rating: LOW / MEDIUM / HIGH / CRITICAL — one sentence justification.
+
+    Keep the tone professional and direct. No filler. Base everything on the data above.
+    PROMPT;
+        }
+
 }

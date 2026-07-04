@@ -1,0 +1,233 @@
+<?php
+
+namespace Modules\AfisPortal\Services;
+
+use Carbon\Carbon;
+use Modules\AdmmInventory\Models\Client;
+use Modules\AfisPipeline\Models\AfisTracker;
+use Modules\AfisPipeline\Models\AfisTrackerGroup;
+use Modules\AfisPipeline\Models\AfisTrip;
+use Modules\AfisPipeline\Models\AfisMileageDaily;
+use Modules\AfisPipeline\Models\AfisFuelEvent;
+use Modules\AfisPipeline\Models\AfisDeviceAlert;
+
+class ReportDataService
+{
+    // Zimbabwe public holidays 2024-2026
+    private array $zimbabweHolidays = [
+        '2024-01-01', '2024-02-21', '2024-03-29', '2024-04-01',
+        '2024-04-18', '2024-05-01', '2024-05-25', '2024-08-12',
+        '2024-08-13', '2024-12-22', '2024-12-25', '2024-12-26',
+        '2025-01-01', '2025-02-21', '2025-04-18', '2025-04-19',
+        '2025-04-20', '2025-04-21', '2025-04-18', '2025-05-01',
+        '2025-05-25', '2025-08-11', '2025-08-12', '2025-12-22',
+        '2025-12-25', '2025-12-26',
+        '2026-01-01', '2026-02-21', '2026-04-03', '2026-04-05',
+        '2026-04-06', '2026-04-07', '2026-04-18', '2026-05-01',
+        '2026-05-25', '2026-08-11', '2026-08-12', '2026-12-22',
+        '2026-12-25', '2026-12-26',
+    ];
+
+    private int $speedLimit = 120;
+
+    public function buildReportData(
+        Client  $client,
+        Carbon  $from,
+        Carbon  $to,
+        ?int    $groupId = null
+    ): array {
+        // Get trackers — filtered by group if specified
+        $trackerQuery = AfisTracker::where('client_id', $client->id);
+
+        if ($groupId) {
+            $trackerQuery->where('navixy_group_id', $groupId);
+        }
+
+        $trackers   = $trackerQuery->orderBy('label')->get();
+        $trackerIds = $trackers->pluck('id')->toArray();
+
+        if (empty($trackerIds)) {
+            return ['error' => 'No trackers found for this selection.'];
+        }
+
+        // ── Performance metrics ──────────────────────────────────────────────
+        $totalMileage    = AfisMileageDaily::whereIn('tracker_id', $trackerIds)
+            ->whereBetween('date', [$from->toDateString(), $to->toDateString()])
+            ->sum('mileage_km');
+
+        $allTrips = AfisTrip::whereIn('tracker_id', $trackerIds)
+            ->whereBetween('start_time', [$from, $to])
+            ->get();
+
+        $weekendKm   = 0;
+        $afterHrsKm  = 0;
+        $speedingTrips = [];
+
+        foreach ($allTrips as $trip) {
+            $start = Carbon::parse($trip->start_time);
+            $km    = $trip->distance_km;
+
+            if ($this->isWeekendOrHoliday($start)) $weekendKm += $km;
+            if ($this->isAfterHours($start)) $afterHrsKm += $km;
+            if ($trip->max_speed_kmh > $this->speedLimit) {
+                $speedingTrips[] = $trip;
+            }
+        }
+
+        // ── Per-vehicle data ─────────────────────────────────────────────────
+        $vehicles = [];
+        foreach ($trackers as $tracker) {
+            $vTrips = $allTrips->where('tracker_id', $tracker->id);
+
+            $vMileage   = AfisMileageDaily::where('tracker_id', $tracker->id)
+                ->whereBetween('date', [$from->toDateString(), $to->toDateString()])
+                ->sum('mileage_km');
+
+            $vWeekend   = 0;
+            $vAfterHrs  = 0;
+            $vMaxSpeed  = 0;
+            $vSpeeding  = 0;
+
+            // After hours breakdown by hour slot
+            $hourBreakdown = [];
+            for ($h = 18; $h <= 23; $h++) $hourBreakdown["{$h}:00-{$h}:59"] = 0;
+            for ($h = 0; $h <= 5; $h++)  $hourBreakdown["{$h}:00-{$h}:59"] = 0;
+
+            foreach ($vTrips as $trip) {
+                $start = Carbon::parse($trip->start_time);
+                $km    = $trip->distance_km;
+
+                if ($this->isWeekendOrHoliday($start)) $vWeekend += $km;
+                if ($this->isAfterHours($start)) {
+                    $vAfterHrs += $km;
+                    $hour = (int) $start->format('H');
+                    $key  = "{$hour}:00-{$hour}:59";
+                    if (isset($hourBreakdown[$key])) $hourBreakdown[$key] += $km;
+                }
+                if ($trip->max_speed_kmh > $vMaxSpeed) $vMaxSpeed = $trip->max_speed_kmh;
+                if ($trip->max_speed_kmh > $this->speedLimit) $vSpeeding++;
+            }
+
+            // Fuel events for this tracker
+            $fuelingEvents = AfisFuelEvent::where('tracker_id', $tracker->id)
+                ->where('event_type', 'fueling')
+                ->whereBetween('occurred_at', [$from, $to])
+                ->get();
+
+            $drainEvents = AfisFuelEvent::where('tracker_id', $tracker->id)
+                ->where('event_type', 'drain')
+                ->whereBetween('occurred_at', [$from, $to])
+                ->get();
+
+            $totalFueling = round($fuelingEvents->sum('volume_litres'), 2);
+            $totalDrain   = round($drainEvents->sum('volume_litres'), 2);
+            $consumption  = $vMileage > 0 && $totalFueling > 0
+                ? round(($totalFueling / $vMileage) * 100, 4)
+                : null;
+
+            // Get group name
+            $group = AfisTrackerGroup::where('navixy_group_id', $tracker->navixy_group_id)->first();
+
+            $vehicles[] = [
+                'id'             => $tracker->id,
+                'label'          => $tracker->label,
+                'group'          => $group?->title ?? $client->name,
+                'group_id'       => $tracker->navixy_group_id,
+                'mileage'        => round($vMileage, 2),
+                'weekend_km'     => round($vWeekend, 2),
+                'after_hrs_km'   => round($vAfterHrs, 2),
+                'max_speed'      => round($vMaxSpeed, 0),
+                'speeding_trips' => $vSpeeding,
+                'hour_breakdown' => $hourBreakdown,
+                'fueling_count'  => $fuelingEvents->count(),
+                'fueling_litres' => $totalFueling,
+                'drain_count'    => $drainEvents->count(),
+                'drain_litres'   => $totalDrain,
+                'consumption'    => $consumption,
+                'trips'          => $vTrips->count(),
+                'fuel_events'    => $fuelingEvents->map(fn($f) => [
+                    'date'    => Carbon::parse($f->occurred_at)->format('d.m.Y'),
+                    'mileage' => $f->mileage_at_event,
+                    'refuels' => 1,
+                    'volume'  => $f->volume_litres,
+                    'consumed'=> null,
+                    'rate'    => $f->volume_litres && $vMileage > 0
+                        ? round(($f->volume_litres / ($vMileage ?: 1)) * 100, 4) : null,
+                ])->toArray(),
+            ];
+        }
+
+        // ── Speeding summary ─────────────────────────────────────────────────
+        $speedingSummary = collect($vehicles)
+            ->filter(fn($v) => $v['speeding_trips'] > 0)
+            ->sortByDesc('max_speed')
+            ->values()
+            ->toArray();
+
+        // ── Weekend summary ──────────────────────────────────────────────────
+        $weekendSummary = collect($vehicles)
+            ->filter(fn($v) => $v['weekend_km'] > 0)
+            ->sortByDesc('weekend_km')
+            ->values()
+            ->toArray();
+
+        // ── After hours summary ──────────────────────────────────────────────
+        $afterHrsSummary = collect($vehicles)
+            ->filter(fn($v) => $v['after_hrs_km'] > 0)
+            ->sortByDesc('after_hrs_km')
+            ->values()
+            ->toArray();
+
+        // ── Fuel summary ─────────────────────────────────────────────────────
+        $fuelSummary = collect($vehicles)
+            ->filter(fn($v) => $v['fueling_count'] > 0 || $v['drain_count'] > 0)
+            ->sortByDesc('fueling_litres')
+            ->values()
+            ->toArray();
+
+        // ── Sub-group breakdown ──────────────────────────────────────────────
+        $groupBreakdown = collect($vehicles)
+            ->groupBy('group')
+            ->map(fn($gv) => [
+                'name'       => $gv->first()['group'],
+                'count'      => $gv->count(),
+                'mileage'    => round($gv->sum('mileage'), 2),
+                'weekend_km' => round($gv->sum('weekend_km'), 2),
+                'after_hrs'  => round($gv->sum('after_hrs_km'), 2),
+                'speeding'   => $gv->sum('speeding_trips'),
+            ])
+            ->sortBy('name')
+            ->values()
+            ->toArray();
+
+        return [
+            'client'         => $client,
+            'from'           => $from,
+            'to'             => $to,
+            'fleet_size'     => $trackers->count(),
+            'total_mileage'  => round($totalMileage, 2),
+            'weekend_km'     => round($weekendKm, 2),
+            'after_hrs_km'   => round($afterHrsKm, 2),
+            'vehicles'       => $vehicles,
+            'speeding'       => $speedingSummary,
+            'weekend'        => $weekendSummary,
+            'after_hours'    => $afterHrsSummary,
+            'fuel'           => $fuelSummary,
+            'groups'         => $groupBreakdown,
+            'speed_limit'    => $this->speedLimit,
+            'generated_at'   => Carbon::now(),
+        ];
+    }
+
+    private function isWeekendOrHoliday(Carbon $date): bool
+    {
+        if ($date->isWeekend()) return true;
+        return in_array($date->toDateString(), $this->zimbabweHolidays);
+    }
+
+    private function isAfterHours(Carbon $date): bool
+    {
+        $hour = (int) $date->format('H');
+        return $hour >= 18 || $hour < 6;
+    }
+}

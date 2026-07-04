@@ -193,4 +193,54 @@ class NavixyDataService
         $data = $this->post('tracker/list', [], $instance);
         return $data['list'] ?? [];
     }
+
+    // ─── (Engine Hours)) ───────────────────────────────────
+
+    public function getEngineHours(array $trackerIds, Carbon $from, Carbon $to, int $instance = 1): array
+    {
+        if (empty($trackerIds)) return [];
+
+        try {
+            $results = [];
+            foreach ($trackerIds as $id) {
+                $hash     = $this->auth->getHash($instance);
+                $response = Http::timeout(30)
+                    ->withHeaders(['Content-Type' => 'application/json'])
+                    ->post("{$this->baseUrl}/tracker/stats/engine_hours/read", [
+                        'hash'       => $hash,
+                        'tracker_id' => $id,
+                        'from'       => $from->format('Y-m-d H:i:s'),
+                        'to'         => $to->format('Y-m-d H:i:s'),
+                    ]);
+                $data = $response->json();
+                if (!empty($data['success'])) {
+                    $results[$id] = $data['value'] ?? 0;
+                }
+                usleep(100000); // 0.1s delay to avoid rate limits
+            }
+            return $results;
+        } catch (\Throwable $e) {
+            Log::warning("NavixyDataService: getEngineHours failed", ['error' => $e->getMessage()]);
+            return [];
+        }
+    }
+
+    // ─── (Engine Hours)) ───────────────────────────────────
+
+    public function getTrackerSensors(int $trackerId, int $instance = 1): array
+    {
+        try {
+            $hash     = $this->auth->getHash($instance);
+            $response = Http::timeout(30)
+                ->withHeaders(['Content-Type' => 'application/json'])
+                ->post("{$this->baseUrl}/tracker/sensor/list", [
+                    'hash'       => $hash,
+                    'tracker_id' => $trackerId,
+                ]);
+            $data = $response->json();
+            return $data['list'] ?? [];
+        } catch (\Throwable $e) {
+            return [];
+        }
+    }
 }

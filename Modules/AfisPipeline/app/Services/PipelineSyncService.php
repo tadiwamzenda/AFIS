@@ -11,6 +11,7 @@ use Modules\AfisPipeline\Models\AfisTrip;
 use Modules\AfisPipeline\Models\AfisTrackerGroup;
 use Modules\AfisPipeline\Models\AfisMileageDaily;
 use Modules\AfisPipeline\Models\AfisDeviceAlert;
+use Modules\AfisPipeline\Models\AfisFuelEvent;
 
 class PipelineSyncService
 {
@@ -149,6 +150,27 @@ class PipelineSyncService
                     ]
                 );
                 $alertsSynced++;
+                // Extract fuel events separately
+                if (in_array($alert['event'] ?? '', ['fueling', 'drain'])) {
+                    $extra = $alert['extra'] ?? [];
+                    \Modules\AfisPipeline\Models\AfisFuelEvent::firstOrCreate(
+                        [
+                            'tracker_id'        => $tracker->id,
+                            'navixy_tracker_id' => $trackerId,
+                            'occurred_at'       => Carbon::parse($alert['time']),
+                            'event_type'        => $alert['event'],
+                        ],
+                        [
+                            'client_id'      => $client->id,
+                            'volume_litres'  => $extra['volume'] ?? null,
+                            'initial_volume' => $extra['initial_fuel_level'] ?? null,
+                            'final_volume'   => $extra['final_fuel_level'] ?? null,
+                            'lat'            => $alert['location']['lat'] ?? null,
+                            'lng'            => $alert['location']['lng'] ?? null,
+                            'address'        => $alert['address'] ?? null,
+                        ]
+                    );
+                }
             }
 
             $log->update([

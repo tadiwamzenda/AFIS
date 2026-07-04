@@ -17,6 +17,7 @@ class AfisPortalServiceProvider extends ServiceProvider
         \Livewire\Livewire::component('afis-client-fleet-dashboard', \Modules\AfisPortal\Livewire\ClientFleetDashboard::class);
         \Livewire\Livewire::component('afis-vehicle-inspector',      \Modules\AfisPortal\Livewire\VehicleInspector::class);
         \Livewire\Livewire::component('afis-report-viewer',          \Modules\AfisPortal\Livewire\ReportViewer::class);
+        \Livewire\Livewire::component('afis-report-generator', \Modules\AfisPortal\Livewire\ReportGenerator::class);
     }
 
     public function register(): void

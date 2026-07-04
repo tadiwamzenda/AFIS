@@ -66,12 +66,13 @@ class ClientFleetDashboard extends Component
                 $tracker = AfisTracker::updateOrCreate(
                     ['navixy_tracker_id' => $t['id']],
                     [
-                        'client_id'      => $this->clientId,
-                        'label'          => $t['label'] ?? 'Unknown',
-                        'model_name'     => $t['source']['model'] ?? null,
-                        'imei'           => $imei,
-                        'is_active'      => !($t['source']['blocked'] ?? false),
-                        'last_synced_at' => now(),
+                        'client_id'       => $this->clientId,
+                        'navixy_group_id' => $t['group_id'] ?? null,
+                        'label'           => $t['label'] ?? 'Unknown',
+                        'model_name'       => $t['source']['model'] ?? null,
+                        'imei'            => $imei,
+                        'is_active'       => !($t['source']['blocked'] ?? false),
+                        'last_synced_at'  => now(),
                     ]
                 );
 
