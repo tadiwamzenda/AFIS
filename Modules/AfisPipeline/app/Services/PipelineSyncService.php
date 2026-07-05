@@ -159,25 +159,26 @@ class PipelineSyncService
                 $alertsSynced++;
                 // Extract fuel events separately
                 if (in_array($alert['event'] ?? '', ['fueling', 'drain'])) {
-                    $extra = $alert['extra'] ?? [];
-                    \Modules\AfisPipeline\Models\AfisFuelEvent::firstOrCreate(
-                        [
-                            'tracker_id'        => $tracker->id,
-                            'navixy_tracker_id' => $trackerId,
-                            'occurred_at'       => Carbon::parse($alert['time']),
-                            'event_type'        => $alert['event'],
-                        ],
-                        [
-                            'client_id'      => $client->id,
-                            'volume_litres'  => $extra['volume'] ?? null,
-                            'initial_volume' => $extra['initial_fuel_level'] ?? null,
-                            'final_volume'   => $extra['final_fuel_level'] ?? null,
-                            'lat'            => $alert['location']['lat'] ?? null,
-                            'lng'            => $alert['location']['lng'] ?? null,
-                            'address'        => $alert['address'] ?? null,
-                        ]
-                    );
-                }
+                $extra = $alert['extra_data'] ?? $alert['extra'] ?? [];
+                \Modules\AfisPipeline\Models\AfisFuelEvent::firstOrCreate(
+                    [
+                        'tracker_id'        => $tracker->id,
+                        'navixy_tracker_id' => $trackerId,
+                        'occurred_at'       => Carbon::parse($alert['time'] ?? $alert['occurred_at']),
+                        'event_type'        => $alert['event'] ?? $alert['event_type'],
+                    ],
+                    [
+                        'client_id'      => $client->id,
+                        'volume_litres'  => isset($extra['sensor_calculated_value'])
+                            ? (float) $extra['sensor_calculated_value'] : null,
+                        'initial_volume' => null,
+                        'final_volume'   => null,
+                        'lat'            => $alert['location']['lat'] ?? $alert['lat'] ?? null,
+                        'lng'            => $alert['location']['lng'] ?? $alert['lng'] ?? null,
+                        'address'        => $alert['address'] ?? null,
+                    ]
+                );
+            }
             }
 
             $log->update([

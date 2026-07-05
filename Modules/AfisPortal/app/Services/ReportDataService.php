@@ -35,6 +35,7 @@ class ReportDataService
         Carbon  $from,
         Carbon  $to,
         ?int    $groupId = null
+        
     ): array {
         // Get trackers — filtered by group if specified
         $trackerQuery = AfisTracker::where('client_id', $client->id);
@@ -88,6 +89,7 @@ class ReportDataService
             $vMaxSpeed  = 0;
             $vSpeeding  = 0;
 
+
             // After hours breakdown by hour slot
             $hourBreakdown = [];
             for ($h = 18; $h <= 23; $h++) $hourBreakdown["{$h}:00-{$h}:59"] = 0;
@@ -107,6 +109,47 @@ class ReportDataService
                 if ($trip->max_speed_kmh > $vMaxSpeed) $vMaxSpeed = $trip->max_speed_kmh;
                 if ($trip->max_speed_kmh > $this->speedLimit) $vSpeeding++;
             }
+
+            // ── Speeding detail from alerts ───────────────────────────────────
+            $speedingDetail = collect($vehicles)
+            ->filter(fn($v) => $v['speeding_trips'] > 0)
+            ->map(function ($v) use ($trackerIds, $from, $to) {
+                // Get the worst speeding trip for address
+                $worstTrip = AfisTrip::where('tracker_id', $v['id'])
+                    ->whereBetween('start_time', [$from, $to])
+                    ->where('max_speed_kmh', '>', $this->speedLimit)
+                    ->orderByDesc('max_speed_kmh')
+                    ->first();
+
+                // Try to get address from speedup alerts
+                $alert = \Modules\AfisPipeline\Models\AfisDeviceAlert::where('tracker_id', $v['id'])
+                    ->where('event_type', 'speedup')
+                    ->whereBetween('occurred_at', [$from, $to])
+                    ->whereNotNull('address')
+                    ->orderByDesc('occurred_at')
+                    ->first();
+
+                // Also try outzone alerts which often have location context
+                if (!$alert) {
+                    $alert = \Modules\AfisPipeline\Models\AfisDeviceAlert::where('tracker_id', $v['id'])
+                        ->whereBetween('occurred_at', [$from, $to])
+                        ->whereNotNull('address')
+                        ->whereRaw("address != ''"  )
+                        ->first();
+                }
+
+                return [
+                    'label'     => $v['label'],
+                    'group'     => $v['group'],
+                    'top_speed' => $v['max_speed'],
+                    'address'   => $alert?->address ?? ($worstTrip ? 'Speed recorded on ' . Carbon::parse($worstTrip->start_time)->format('d M Y') : '—'),
+                    'time'      => $worstTrip ? Carbon::parse($worstTrip->start_time)->format('Y-m-d') : '—',
+                    'frequency' => $v['speeding_trips'],
+                ];
+            })
+            ->sortByDesc('top_speed')
+            ->values()
+            ->toArray();
 
             // Fuel events for this tracker
             $fuelingEvents = AfisFuelEvent::where('tracker_id', $tracker->id)
@@ -145,17 +188,45 @@ class ReportDataService
                 'drain_litres'   => $totalDrain,
                 'consumption'    => $consumption,
                 'trips'          => $vTrips->count(),
-                'fuel_events'    => $fuelingEvents->map(fn($f) => [
+                'fuel_events' => collect(
+                    AfisFuelEvent::where('tracker_id', $tracker->id)
+                        ->whereBetween('occurred_at', [$from, $to])
+                        ->orderBy('occurred_at')
+                        ->get()
+                )->map(fn($f) => [
                     'date'    => Carbon::parse($f->occurred_at)->format('d.m.Y'),
-                    'mileage' => $f->mileage_at_event,
-                    'refuels' => 1,
+                    'type'    => $f->event_type,
                     'volume'  => $f->volume_litres,
-                    'consumed'=> null,
-                    'rate'    => $f->volume_litres && $vMileage > 0
-                        ? round(($f->volume_litres / ($vMileage ?: 1)) * 100, 4) : null,
+                    'address' => $f->address,
                 ])->toArray(),
             ];
         }
+        
+        // ── Weekend dates breakdown ───────────────────────────────────────
+        $weekendDates = [];
+        $current = $from->copy();
+        while ($current->lte($to)) {
+            if ($this->isWeekendOrHoliday($current)) {
+                $weekendDates[] = $current->toDateString();
+            }
+            $current->addDay();
+        }
+
+        // Per-vehicle km on each weekend date
+        $weekendByDate = [];
+        foreach ($vehicles as &$vehicle) {
+            $tracker   = $trackers->firstWhere('id', $vehicle['id']);
+            $dateTotals = [];
+            foreach ($weekendDates as $date) {
+                $km = AfisTrip::where('tracker_id', $vehicle['id'])
+                    ->whereDate('start_time', $date)
+                    ->sum('distance_km');
+                $dateTotals[$date] = round($km, 0);
+            }
+            $vehicle['weekend_dates'] = $dateTotals;
+            $vehicle['weekend_total'] = array_sum($dateTotals);
+        }
+        unset($vehicle);
 
         // ── Speeding summary ─────────────────────────────────────────────────
         $speedingSummary = collect($vehicles)
@@ -209,6 +280,8 @@ class ReportDataService
             'weekend_km'     => round($weekendKm, 2),
             'after_hrs_km'   => round($afterHrsKm, 2),
             'vehicles'       => $vehicles,
+            'weekend_dates' => $weekendDates,
+            'speeding_detail' => $speedingDetail,
             'speeding'       => $speedingSummary,
             'weekend'        => $weekendSummary,
             'after_hours'    => $afterHrsSummary,

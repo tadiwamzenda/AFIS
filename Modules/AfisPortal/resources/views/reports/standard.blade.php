@@ -33,6 +33,11 @@
     .highlight { background: #fff3cd !important; font-weight: bold; }
     .danger { color: #dc2626; font-weight: bold; }
     .zero { color: #9ca3af; }
+    .col-yellow  { background: #fef08a; }
+    .col-amber   { background: #fed7aa; }
+    .col-red     { background: #fecaca; }
+    .col-green-1 { background: #bbf7d0; }
+    .col-green-2 { background: #dcfce7; }
 
     /* Page break */
     .page-break { page-break-after: always; }
@@ -109,42 +114,47 @@
         <tr><td class="text-left">Total Mileage (km)</td><td>{{ number_format($total_mileage, 2) }}</td></tr>
         <tr><td class="text-left">Weekends and Holidays (km)</td><td>{{ number_format($weekend_km, 2) }}</td></tr>
         <tr><td class="text-left">After Hours (km)</td><td>{{ number_format($after_hrs_km, 2) }}</td></tr>
-        @if(count($groups) > 0)
-        @foreach($groups as $group)
-        <tr>
-            <td class="text-left" style="padding-left: 15px;">↳ {{ $group['name'] }} mileage (km)</td>
-            <td>{{ number_format($group['mileage'], 2) }}</td>
-        </tr>
-        @endforeach
-        @endif
+        
     </tbody>
 </table>
 
 @if(count($groups) > 1)
-{{-- Sub-group breakdown --}}
-<div class="section-title">SUB-GROUP BREAKDOWN</div>
+{{-- Sub-group breakdown — groups as COLUMNS, metrics as ROWS --}}
+<div class="section-title" style="margin-top:10px;">SUB-GROUP PERFORMANCE</div>
 <table>
     <thead>
         <tr>
-            <th class="text-left">GROUP</th>
-            <th>VEHICLES</th>
-            <th>MILEAGE (km)</th>
-            <th>WEEKEND (km)</th>
-            <th>AFTER HRS (km)</th>
-            <th>SPEEDING TRIPS</th>
+            <th class="text-left" style="width:120px;">ASPECT</th>
+            @foreach($groups as $group)
+            <th>{{ strtoupper($group['name']) }}</th>
+            @endforeach
         </tr>
     </thead>
     <tbody>
-        @foreach($groups as $group)
         <tr>
-            <td class="text-left">{{ $group['name'] }}</td>
-            <td>{{ $group['count'] }}</td>
-            <td>{{ number_format($group['mileage'], 2) }}</td>
-            <td class="{{ $group['weekend_km'] > 0 ? 'highlight' : '' }}">{{ number_format($group['weekend_km'], 2) }}</td>
-            <td class="{{ $group['after_hrs'] > 0 ? 'highlight' : '' }}">{{ number_format($group['after_hrs'], 2) }}</td>
-            <td class="{{ $group['speeding'] > 0 ? 'danger' : 'zero' }}">{{ $group['speeding'] }}</td>
+            <td class="text-left bold">Fleet Size (vehicles)</td>
+            @foreach($groups as $group)
+            <td class="bold">{{ $group['count'] }}</td>
+            @endforeach
         </tr>
-        @endforeach
+        <tr>
+            <td class="text-left bold">Total Mileage</td>
+            @foreach($groups as $group)
+            <td>{{ number_format($group['mileage'], 0) }}</td>
+            @endforeach
+        </tr>
+        <tr>
+            <td class="text-left bold">Weekends and Holidays</td>
+            @foreach($groups as $group)
+            <td class="{{ $group['weekend_km'] > 0 ? 'highlight' : '' }}">{{ number_format($group['weekend_km'], 0) }}</td>
+            @endforeach
+        </tr>
+        <tr>
+            <td class="text-left bold">After Hours (km)</td>
+            @foreach($groups as $group)
+            <td class="{{ $group['after_hrs'] > 0 ? 'highlight' : '' }}">{{ number_format($group['after_hrs'], 0) }}</td>
+            @endforeach
+        </tr>
     </tbody>
 </table>
 @endif
@@ -155,8 +165,21 @@
 <div class="section-title">AFTER HOURS DRIVING (18:00 — 05:59)</div>
 
 @php
-    $afterHrsVehicles = array_filter($vehicles, fn($v) => $v['after_hrs_km'] > 0);
-    $hourSlots = ['18:00-18:59','19:00-19:59','20:00-20:59','21:00-21:59','22:00-22:59','23:00-23:59','0:00-0:59','1:00-1:59','2:00-2:59','3:00-3:59','4:00-4:59','5:00-5:59'];
+$afterHrsVehicles = array_filter($vehicles, fn($v) => $v['after_hrs_km'] > 0);
+$hourCols = [
+    ['key' => '18:00-18:59', 'label' => '18:00-19:00', 'color' => 'col-yellow'],
+    ['key' => '19:00-19:59', 'label' => '19:00-20:00', 'color' => 'col-yellow'],
+    ['key' => '20:00-20:59', 'label' => '20:00-21:00', 'color' => 'col-amber'],
+    ['key' => '21:00-21:59', 'label' => '21:00-22:00', 'color' => 'col-amber'],
+    ['key' => '22:00-22:59', 'label' => '22:00-23:00', 'color' => 'col-red'],
+    ['key' => '23:00-23:59', 'label' => '23:00-00:00', 'color' => 'col-red'],
+    ['key' => '0:00-0:59',   'label' => '00:00-01:00', 'color' => 'col-red'],
+    ['key' => '1:00-1:59',   'label' => '01:00-02:00', 'color' => 'col-red'],
+    ['key' => '2:00-2:59',   'label' => '02:00-03:00', 'color' => 'col-red'],
+    ['key' => '3:00-3:59',   'label' => '03:00-04:00', 'color' => 'col-red'],
+    ['key' => '4:00-4:59',   'label' => '04:00-05:00', 'color' => 'col-amber'],
+    ['key' => '5:00-5:59',   'label' => '05:00-06:00', 'color' => 'col-yellow'],
+];
 @endphp
 
 @if(!empty($afterHrsVehicles))
@@ -165,8 +188,8 @@
         <tr>
             <th class="text-left">VEHICLE REG</th>
             <th>LOCATION</th>
-            @foreach($hourSlots as $slot)
-            <th>{{ substr($slot, 0, 5) }}</th>
+            @foreach($hourCols as $col)
+            <th style="width:50px; background:#085041; color:white;">{{ substr($col['label'], 0, 5) }}<br>{{ substr($col['label'], 6) }}</th>
             @endforeach
         </tr>
     </thead>
@@ -175,11 +198,9 @@
         <tr>
             <td class="text-left">{{ $vehicle['label'] }}</td>
             <td>{{ $vehicle['group'] }}</td>
-            @foreach($hourSlots as $slot)
-            @php $km = $vehicle['hour_breakdown'][$slot] ?? 0; @endphp
-            <td class="{{ $km > 0 ? 'highlight' : 'zero' }}">
-                {{ $km > 0 ? round($km) : '0' }}
-            </td>
+            @foreach($hourCols as $col)
+            @php $km = round($vehicle['hour_breakdown'][$col['key']] ?? 0); @endphp
+            <td class="{{ $col['color'] }}" style="{{ $km > 0 ? 'font-weight:bold;' : 'color:#aaa;' }}">{{ $km }}</td>
             @endforeach
         </tr>
         @endforeach
@@ -192,60 +213,81 @@
 <div class="page-break"></div>
 
 {{-- Page 3: Speeding --}}
-<div class="section-title">SPEEDING INCIDENTS (VEHICLES EXCEEDING {{ $speed_limit }} KM/H)</div>
+<div class="section-title">SPEEDING INCIDENTS — VEHICLES EXCEEDING {{ $speed_limit }} KM/H</div>
 
-@if(!empty($speeding))
+@if(!empty($speeding_detail))
 <table>
     <thead>
         <tr>
-            <th class="text-left">VEHICLE REG</th>
-            <th>GROUP</th>
-            <th>TOP SPEED (km/h)</th>
-            <th>SPEEDING TRIPS</th>
-            <th>TOTAL MILEAGE (km)</th>
+            <th class="text-left">REG NO.</th>
+            <th>LOCATION</th>
+            <th>TOP SPEED</th>
+            <th class="text-left">LOCATION (ADDRESS)</th>
+            <th>TIME</th>
+            <th>FREQUENCY OF SPEEDING</th>
         </tr>
     </thead>
     <tbody>
-        @foreach($speeding as $v)
+        @foreach($speeding_detail as $v)
         <tr>
-            <td class="text-left">{{ $v['label'] }}</td>
+            <td class="text-left bold">{{ $v['label'] }}</td>
             <td>{{ $v['group'] }}</td>
-            <td class="danger">{{ number_format($v['max_speed'], 0) }}</td>
-            <td class="danger">{{ $v['speeding_trips'] }}</td>
-            <td>{{ number_format($v['mileage'], 2) }}</td>
+            <td class="danger bold">{{ $v['top_speed'] }}</td>
+            <td class="text-left" style="font-size:7px;">{{ $v['address'] }}</td>
+            <td>{{ $v['time'] }}</td>
+            <td class="danger bold">{{ $v['frequency'] }}</td>
         </tr>
         @endforeach
     </tbody>
 </table>
 @else
-<p style="text-align:center;color:#6b7280;padding:15px;font-size:8px;">No speeding incidents recorded. All vehicles below {{ $speed_limit }} km/h.</p>
+<p style="text-align:center; color:#666; padding:10px; font-size:8px;">
+    ✓ No speeding incidents recorded. All vehicles below {{ $speed_limit }} km/h.
+</p>
 @endif
 
-{{-- Weekend/Holiday driving --}}
-@if(!empty($weekend))
-<div class="section-title">WEEKEND AND HOLIDAY DRIVING</div>
+{{-- Weekend/Holiday --}}
+<div class="section-title">WEEKENDS AND HOLIDAYS</div>
+
+@php $weekendVehicles = array_filter($vehicles, fn($v) => ($v['weekend_total'] ?? 0) > 0); @endphp
+
+@if(!empty($weekendVehicles) && !empty($weekend_dates))
 <table>
     <thead>
         <tr>
-            <th class="text-left">VEHICLE REG</th>
-            <th>GROUP</th>
-            <th>WEEKEND/HOLIDAY KM</th>
-            <th>TOTAL MILEAGE (km)</th>
+            <th class="text-left">VEHICLE ID.</th>
+            <th class="text-left">LOCATION</th>
+            @foreach($weekend_dates as $date)
+            <th style="background:#085041; color:white;">{{ \Carbon\Carbon::parse($date)->format('Y-m-d') }}</th>
+            @endforeach
+            <th>TOTAL WEEKEND MILEAGE</th>
+            <th>TOTAL OVERALL MILEAGE</th>
             <th>WEEKEND %</th>
         </tr>
     </thead>
     <tbody>
-        @foreach($weekend as $v)
+        @foreach($weekendVehicles as $v)
         <tr>
-            <td class="text-left">{{ $v['label'] }}</td>
-            <td>{{ $v['group'] }}</td>
-            <td class="highlight">{{ number_format($v['weekend_km'], 2) }}</td>
-            <td>{{ number_format($v['mileage'], 2) }}</td>
-            <td>{{ $v['mileage'] > 0 ? number_format(($v['weekend_km']/$v['mileage'])*100, 1) : '0' }}%</td>
+            <td class="text-left bold">{{ $v['label'] }}</td>
+            <td class="text-left">{{ $v['group'] }}</td>
+            @foreach($weekend_dates as $di => $date)
+            @php
+                $km = $v['weekend_dates'][$date] ?? 0;
+                $greenClass = (intdiv($di, 2) % 2 === 0) ? 'col-green-1' : 'col-green-2';
+            @endphp
+            <td class="{{ $greenClass }}" style="{{ $km > 0 ? 'font-weight:bold;' : 'color:#aaa;' }}">{{ $km }}</td>
+            @endforeach
+            <td class="bold highlight">{{ number_format($v['weekend_total'], 2) }}</td>
+            <td class="bold">{{ number_format($v['mileage'], 2) }}</td>
+            <td class="{{ $v['mileage'] > 0 && ($v['weekend_total']/$v['mileage']) > 0.3 ? 'danger' : '' }}">
+                {{ $v['mileage'] > 0 ? number_format(($v['weekend_total']/$v['mileage'])*100, 1) : '0' }}%
+            </td>
         </tr>
         @endforeach
     </tbody>
 </table>
+@else
+<p style="text-align:center; color:#666; padding:10px; font-size:8px;">No weekend or holiday driving recorded.</p>
 @endif
 
 @if(!empty($fuel))
@@ -253,41 +295,31 @@
 
 {{-- Page 4: Fuel Summary --}}
 <div class="section-title">FUEL SUMMARY</div>
+
 <table>
     <thead>
         <tr>
             <th class="text-left">VEHICLE REG</th>
             <th>DATE</th>
-            <th>MILEAGE (km)</th>
-            <th>REFUELINGS</th>
-            <th>VOLUME (L)</th>
-            <th>CONSUMED (L)</th>
-            <th>CONSUMPTION km/Ltr</th>
+            <th>EVENT</th>
+            <th>FUEL LEVEL (L)</th>
+            <th class="text-left">ADDRESS</th>
         </tr>
     </thead>
     <tbody>
         @foreach($fuel as $vehicle)
             @foreach($vehicle['fuel_events'] as $fe)
             <tr>
-                <td class="text-left">{{ $vehicle['label'] }}</td>
+                <td class="text-left bold">{{ $vehicle['label'] }}</td>
                 <td>{{ $fe['date'] }}</td>
-                <td>{{ $fe['mileage'] ? number_format($fe['mileage'], 2) : '—' }}</td>
-                <td>{{ $fe['refuels'] }}</td>
-                <td>{{ $fe['volume'] ? number_format($fe['volume'], 2) : '—' }}</td>
-                <td>{{ $fe['consumed'] ? number_format($fe['consumed'], 2) : '—' }}</td>
-                <td>{{ $fe['rate'] ? number_format($fe['rate'], 4) : '—' }}</td>
+                <td class="{{ $fe['type'] === 'drain' ? 'danger bold' : 'bold' }}">
+                    {{ strtoupper($fe['type'] ?? 'FUELING') }}
+                </td>
+                <td class="{{ $fe['type'] === 'drain' ? 'danger' : '' }}">
+                    {{ $fe['volume'] ? number_format($fe['volume'], 2) . ' L' : '—' }}
+                </td>
+                <td class="text-left" style="font-size:7px;">{{ $fe['address'] ?? '—' }}</td>
             </tr>
-            @endforeach
-            @foreach($vehicle['fuel_events'] as $fe)
-            @if($fe === end($vehicle['fuel_events']))
-            @if($vehicle['drain_count'] > 0)
-            <tr style="background: #fef2f2;">
-                <td class="text-left danger">⚠ {{ $vehicle['label'] }} — DRAIN DETECTED</td>
-                <td colspan="5" class="text-left danger">{{ $vehicle['drain_count'] }} drain event(s) · {{ number_format($vehicle['drain_litres'], 2) }}L total</td>
-                <td></td>
-            </tr>
-            @endif
-            @endif
             @endforeach
         @endforeach
     </tbody>
