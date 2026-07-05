@@ -111,9 +111,14 @@ class PipelineSyncService
             }
 
             // ── Step 4: Sync daily mileage (batch) ────────────────────────────
-            $mileageData = $this->navixy->getDailyMileage($trackerIds, $from, $to, $instance);
+            $mileageData = [];
+            foreach (array_chunk($trackerIds, 50) as $chunk) {
+                $chunkData   = $this->navixy->getDailyMileage($chunk, $from, $to, $instance);
+                $mileageData = $mileageData + $chunkData;
+                usleep(200000);
+            }
             foreach ($knownTrackers as $tracker) {
-                $trackerMileage = $mileageData[$tracker->navixy_tracker_id] ?? [];
+                $trackerMileage = $mileageData[(string) $tracker->navixy_tracker_id] ?? [];
                 foreach ($trackerMileage as $date => $data) {
                     AfisMileageDaily::updateOrCreate(
                         ['tracker_id' => $tracker->id, 'date' => $date],

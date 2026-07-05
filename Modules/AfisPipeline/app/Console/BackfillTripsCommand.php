@@ -95,10 +95,16 @@ class BackfillTripsCommand extends Command
             while ($chunkStart->lt($to)) {
                 $chunkEnd = $chunkStart->copy()->addDays(30)->min($to);
 
-                $mileageData = $navixy->getDailyMileage($trackerIds, $chunkStart, $chunkEnd, $instance);
+                // Batch tracker IDs in groups of 50 to avoid Navixy limits
+                $mileageData = [];
+                foreach (array_chunk($trackerIds, 50) as $chunk) {
+                    $chunkData   = $navixy->getDailyMileage($chunk, $chunkStart, $chunkEnd, $instance);
+                    $mileageData = $mileageData + $chunkData; // preserve string numeric keys
+                    usleep(500000);
+                }
 
                 foreach ($trackers as $tracker) {
-                    $trackerMileage = $mileageData[$tracker->navixy_tracker_id] ?? [];
+                    $trackerMileage = $mileageData[(string) $tracker->navixy_tracker_id] ?? [];
                     foreach ($trackerMileage as $date => $data) {
                         AfisMileageDaily::updateOrCreate(
                             ['tracker_id' => $tracker->id, 'date' => $date],
