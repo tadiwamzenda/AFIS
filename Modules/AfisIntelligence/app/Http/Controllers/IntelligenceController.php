@@ -58,24 +58,28 @@ class IntelligenceController extends Controller
     }
 
    private function resolveClientFromAuth(): Client
-{
-    /** @var \App\Models\User $user */
-    $user = Auth::user();
+    {
+        /** @var \App\Models\User $user */
+        $user = Auth::user();
 
-    // Try matching by security_group_id + instance first
-    if ($user->navixy_security_group_id && $user->navixy_instance) {
+        if (!$user->navixy_security_group_id || !$user->navixy_instance) {
+            abort(403, 'Your account is not linked to a client fleet. Contact Bantu Track support.');
+        }
+
+        // Check primary client security_group_id
         $client = Client::where('navixy_security_group_id', $user->navixy_security_group_id)
             ->where('navixy_instance', $user->navixy_instance)
             ->first();
-        if ($client) return $client;
-    }
 
-    // Fallback — try matching by navixy_account_id
-    if ($user->navixy_account_id) {
-        $client = Client::where('navixy_account_id', $user->navixy_account_id)->first();
         if ($client) return $client;
-    }
 
-    abort(403, 'Your account is not linked to a client fleet. Contact Bantu Track support.');
-}
+        // Check extended security groups table (for ZETDC multi-group etc)
+        $extended = \Modules\AdmmInventory\Models\ClientSecurityGroup::where('navixy_security_group_id', $user->navixy_security_group_id)
+            ->where('navixy_instance', $user->navixy_instance)
+            ->first();
+
+        if ($extended) return $extended->client;
+
+        abort(403, 'Your account is not linked to a client fleet. Contact Bantu Track support.');
+    }
 }
