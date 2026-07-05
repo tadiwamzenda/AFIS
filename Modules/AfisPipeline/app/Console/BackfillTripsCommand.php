@@ -9,6 +9,10 @@ use Modules\AfisPipeline\Models\AfisTracker;
 use Modules\AfisPipeline\Models\AfisTrip;
 use Modules\AfisPipeline\Models\AfisMileageDaily;
 use Modules\AfisPipeline\Services\NavixyDataService;
+use Modules\AfisPipeline\Models\AfisDeviceAlert;
+use Modules\AfisPipeline\Models\AfisFuelEvent;
+
+
 
 class BackfillTripsCommand extends Command
 {
@@ -37,8 +41,8 @@ class BackfillTripsCommand extends Command
             : Client::active()->get();
 
         foreach ($clients as $client) {
-            $instance = $client->navixy_instance ?? 1;
-            $trackers = AfisTracker::where('client_id', $client->id)->get();
+            $instance   = $client->navixy_instance ?? 1;
+            $trackers   = AfisTracker::where('client_id', $client->id)->get();
 
             if ($trackers->isEmpty()) {
                 $this->warn("  → {$client->name}: no trackers found, skipping");
@@ -47,11 +51,13 @@ class BackfillTripsCommand extends Command
 
             $this->line("  → {$client->name}: {$trackers->count()} trackers...");
 
+            $trackerIds   = $trackers->pluck('navixy_tracker_id')->toArray();
             $tripCount    = 0;
             $mileageCount = 0;
-            $trackerIds   = $trackers->pluck('navixy_tracker_id')->toArray();
+            $alertCount   = 0;
+            $fuelCount    = 0;
 
-            // ── Backfill trips ────────────────────────────────────────────
+            // ── 1. Trips ──────────────────────────────────────────────────────
             foreach ($trackers as $tracker) {
                 $trips = $navixy->getTrips($tracker->navixy_tracker_id, $from, $to, $instance);
 
@@ -73,7 +79,7 @@ class BackfillTripsCommand extends Command
                             'client_id'        => $client->id,
                             'end_time'         => $endTime,
                             'distance_km'      => $trip['length'] ?? 0,
-                            'avg_speed_kmh'    => $trip['avg_speed'] ?? 0,
+                            'avg_speed_kmh'    => min($trip['avg_speed'] ?? 0, 200),
                             'max_speed_kmh'    => min($trip['max_speed'] ?? 0, 200),
                             'duration_minutes' => $durationMinutes,
                         ]
@@ -81,19 +87,15 @@ class BackfillTripsCommand extends Command
                     $tripCount++;
                 }
 
-                // Small delay to avoid Navixy rate limits
-                usleep(200000); // 0.2 seconds
+                usleep(200000); // 0.2s delay per tracker
             }
 
-            // ── Backfill daily mileage ────────────────────────────────────
-            // Process in 30-day chunks to stay within Navixy limits
+            // ── 2. Daily mileage (batch in 30-day chunks) ─────────────────────
             $chunkStart = $from->copy();
             while ($chunkStart->lt($to)) {
                 $chunkEnd = $chunkStart->copy()->addDays(30)->min($to);
 
-                $mileageData = $navixy->getDailyMileage(
-                    $trackerIds, $chunkStart, $chunkEnd, $instance
-                );
+                $mileageData = $navixy->getDailyMileage($trackerIds, $chunkStart, $chunkEnd, $instance);
 
                 foreach ($trackers as $tracker) {
                     $trackerMileage = $mileageData[$tracker->navixy_tracker_id] ?? [];
@@ -113,7 +115,68 @@ class BackfillTripsCommand extends Command
                 $chunkStart = $chunkEnd->copy()->addDay();
             }
 
-            $this->info("     ✓ {$tripCount} trips, {$mileageCount} daily mileage records");
+            // ── 3. Alerts (speeding, fuel, geofence, crash etc) ──────────────
+            // Process in 7-day chunks to avoid response size limits
+            $chunkStart = $from->copy();
+            $trackerMap = $trackers->keyBy('navixy_tracker_id');
+
+            while ($chunkStart->lt($to)) {
+                $chunkEnd = $chunkStart->copy()->addDays(7)->min($to);
+
+                $alerts = $navixy->getAlerts($trackerIds, $chunkStart, $chunkEnd, $instance);
+
+                foreach ($alerts as $alert) {
+                    $trackerId = $alert['tracker_id'] ?? null;
+                    $tracker   = $trackerMap->get($trackerId);
+                    if (!$tracker || empty($alert['id'])) continue;
+
+                    // Store in afis_device_alerts
+                    \Modules\AfisPipeline\Models\AfisDeviceAlert::updateOrCreate(
+                        ['navixy_alert_id' => $alert['id']],
+                        [
+                            'tracker_id'        => $tracker->id,
+                            'client_id'         => $client->id,
+                            'navixy_tracker_id' => $trackerId,
+                            'event_type'        => $alert['event'] ?? 'unknown',
+                            'message'           => $alert['message'] ?? '',
+                            'is_read'           => $alert['is_read'] ?? false,
+                            'occurred_at'       => Carbon::parse($alert['time']),
+                            'lat'               => $alert['location']['lat'] ?? null,
+                            'lng'               => $alert['location']['lng'] ?? null,
+                            'address'           => $alert['address'] ?? null,
+                            'extra_data'        => $alert['extra'] ?? null,
+                        ]
+                    );
+                    $alertCount++;
+
+                    // Extract fuel events separately
+                    if (in_array($alert['event'] ?? '', ['fueling', 'drain'])) {
+                        $extra = $alert['extra'] ?? [];
+                        \Modules\AfisPipeline\Models\AfisFuelEvent::firstOrCreate(
+                            [
+                                'tracker_id'        => $tracker->id,
+                                'navixy_tracker_id' => $trackerId,
+                                'occurred_at'       => Carbon::parse($alert['time']),
+                                'event_type'        => $alert['event'],
+                            ],
+                            [
+                                'client_id'      => $client->id,
+                                'volume_litres'  => $extra['volume'] ?? null,
+                                'initial_volume' => $extra['initial_fuel_level'] ?? null,
+                                'final_volume'   => $extra['final_fuel_level'] ?? null,
+                                'lat'            => $alert['location']['lat'] ?? null,
+                                'lng'            => $alert['location']['lng'] ?? null,
+                                'address'        => $alert['address'] ?? null,
+                            ]
+                        );
+                        $fuelCount++;
+                    }
+                }
+
+                $chunkStart = $chunkEnd->copy()->addDay();
+            }
+
+            $this->info("     ✓ {$tripCount} trips · {$mileageCount} mileage records · {$alertCount} alerts · {$fuelCount} fuel events");
         }
 
         $this->info('Backfill complete.');
