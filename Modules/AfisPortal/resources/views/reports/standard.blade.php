@@ -290,7 +290,7 @@ $hourCols = [
 <p style="text-align:center; color:#666; padding:10px; font-size:8px;">No weekend or holiday driving recorded.</p>
 @endif
 
-@if(!empty($fuel))
+@if(!empty($fuel_flat))
 <div class="page-break"></div>
 
 {{-- Page 4: Fuel Summary --}}
@@ -301,26 +301,31 @@ $hourCols = [
         <tr>
             <th class="text-left">VEHICLE REG</th>
             <th>DATE</th>
-            <th>EVENT</th>
-            <th>FUEL LEVEL (L)</th>
-            <th class="text-left">ADDRESS</th>
+            <th>MILEAGE</th>
+            <th>REFUELINGS (count)</th>
+            <th>VOLUME (L)</th>
+            <th>CONSUMED (L)</th>
+            <th>CONSUMPTION kms/Ltr</th>
         </tr>
     </thead>
     <tbody>
-        @foreach($fuel as $vehicle)
-            @foreach($vehicle['fuel_events'] as $fe)
-            <tr>
-                <td class="text-left bold">{{ $vehicle['label'] }}</td>
-                <td>{{ $fe['date'] }}</td>
-                <td class="{{ $fe['type'] === 'drain' ? 'danger bold' : 'bold' }}">
-                    {{ strtoupper($fe['type'] ?? 'FUELING') }}
-                </td>
-                <td class="{{ $fe['type'] === 'drain' ? 'danger' : '' }}">
-                    {{ $fe['volume'] ? number_format($fe['volume'], 2) . ' L' : '—' }}
-                </td>
-                <td class="text-left" style="font-size:7px;">{{ $fe['address'] ?? '—' }}</td>
-            </tr>
-            @endforeach
+        @foreach($fuel_flat as $fe)
+        <tr>
+            <td class="text-left bold">{{ $fe['label'] }}</td>
+            <td>{{ $fe['date'] }}</td>
+            <td>{{ $fe['mileage'] ? number_format($fe['mileage'], 2) : '0.00' }}</td>
+            <td>{{ $fe['refuels'] }}</td>
+            <td>{{ $fe['volume'] ? number_format($fe['volume'], 2) : '—' }}</td>
+            <td>{{ $fe['consumed'] ? number_format($fe['consumed'], 2) : '—' }}</td>
+            <td>{{ $fe['rate'] ? number_format($fe['rate'], 4) : '' }}</td>
+        </tr>
+        @if(($fe['type'] ?? '') === 'drain')
+        <tr style="background:#ffeaea;">
+            <td class="text-left danger bold" colspan="3">⚠ FUEL DRAIN — {{ $fe['label'] }}</td>
+            <td colspan="3" class="text-left danger">{{ $fe['address'] ?? '—' }}</td>
+            <td></td>
+        </tr>
+        @endif
         @endforeach
     </tbody>
 </table>

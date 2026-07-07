@@ -193,12 +193,29 @@ class ReportDataService
                         ->whereBetween('occurred_at', [$from, $to])
                         ->orderBy('occurred_at')
                         ->get()
-                )->map(fn($f) => [
-                    'date'    => Carbon::parse($f->occurred_at)->format('d.m.Y'),
-                    'type'    => $f->event_type,
-                    'volume'  => $f->volume_litres,
-                    'address' => $f->address,
-                ])->toArray(),
+                )->map(function($f) use ($tracker, $from) {
+                    // Get daily mileage for this day
+                    $dayMileage = AfisMileageDaily::where('tracker_id', $tracker->id)
+                        ->where('date', Carbon::parse($f->occurred_at)->toDateString())
+                        ->value('mileage_km') ?? 0;
+
+                    $volume   = $f->volume_litres;
+                    $consumed = $volume; // fuel level value = volume consumed/added
+                    $rate     = ($dayMileage > 0 && $consumed > 0)
+                        ? round($dayMileage / $consumed, 4)
+                        : null;
+
+                    return [
+                        'date'     => Carbon::parse($f->occurred_at)->format('d.m.Y'),
+                        'type'     => $f->event_type,
+                        'mileage'  => round($dayMileage, 2),
+                        'refuels'  => 1,
+                        'volume'   => $volume ? round($volume, 2) : null,
+                        'consumed' => $consumed ? round($consumed, 2) : null,
+                        'rate'     => $rate,
+                        'address'  => $f->address,
+                    ];
+                })->toArray(),
             ];
         }
         
@@ -271,6 +288,13 @@ class ReportDataService
             ->values()
             ->toArray();
 
+            // ── Flat fuel list sorted by date for report ─────────────────────
+        $fuelFlat = collect($vehicles)
+            ->flatMap(fn($v) => collect($v['fuel_events'])->map(fn($fe) => array_merge($fe, ['label' => $v['label']])))
+            ->sortBy('date')
+            ->values()
+            ->toArray();
+
         return [
             'client'         => $client,
             'from'           => $from,
@@ -286,6 +310,7 @@ class ReportDataService
             'weekend'        => $weekendSummary,
             'after_hours'    => $afterHrsSummary,
             'fuel'           => $fuelSummary,
+            'fuel_flat'      => $fuelFlat,
             'groups'         => $groupBreakdown,
             'speed_limit'    => $this->speedLimit,
             'generated_at'   => Carbon::now(),
