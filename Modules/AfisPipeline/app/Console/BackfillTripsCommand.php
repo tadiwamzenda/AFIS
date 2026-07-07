@@ -182,6 +182,49 @@ class BackfillTripsCommand extends Command
                 $chunkStart = $chunkEnd->copy()->addDay();
             }
 
+            // ── 4. Fuel sensor readings (for trackers with fuel sensors) ──────
+            foreach ($trackers as $tracker) {
+                $sensors = $navixy->getTrackerSensors($tracker->navixy_tracker_id, $instance);
+                foreach ($sensors as $sensor) {
+                    // Process in 1-day chunks to manage response size
+                    $dayStart = $from->copy();
+                    while ($dayStart->lt($to)) {
+                        $dayEnd      = $dayStart->copy()->endOfDay();
+                        $readings    = $navixy->getFuelSensorReadings(
+                            $tracker->navixy_tracker_id,
+                            $sensor['id'],
+                            $dayStart,
+                            $dayEnd,
+                            $instance
+                        );
+
+                        // Store only start-of-day and end-of-day readings to save space
+                        if (!empty($readings)) {
+                            $first = $readings[0];
+                            $last  = $readings[count($readings) - 1];
+
+                            foreach ([$first, $last] as $reading) {
+                                \Modules\AfisPipeline\Models\AfisFuelReading::firstOrCreate(
+                                    [
+                                        'tracker_id'  => $tracker->id,
+                                        'sensor_id'   => $sensor['id'],
+                                        'reading_time'=> Carbon::parse($reading['get_time']),
+                                    ],
+                                    [
+                                        'client_id'         => $client->id,
+                                        'navixy_tracker_id' => $tracker->navixy_tracker_id,
+                                        'value_litres'      => round($reading['value'], 2),
+                                    ]
+                                );
+                            }
+                        }
+
+                        $dayStart->addDay()->startOfDay();
+                        usleep(100000); // 0.1s per day per tracker
+                    }
+                }
+            } 
+
             $this->info("     ✓ {$tripCount} trips · {$mileageCount} mileage records · {$alertCount} alerts · {$fuelCount} fuel events");
         }
 

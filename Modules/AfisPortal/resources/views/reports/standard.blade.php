@@ -321,9 +321,13 @@ $hourCols = [
         </tr>
         @if(($fe['type'] ?? '') === 'drain')
         <tr style="background:#ffeaea;">
-            <td class="text-left danger bold" colspan="3">⚠ FUEL DRAIN — {{ $fe['label'] }}</td>
-            <td colspan="3" class="text-left danger">{{ $fe['address'] ?? '—' }}</td>
-            <td></td>
+            <td class="text-left danger bold">{{ $fe['label'] }}</td>
+            <td>{{ $fe['date'] }}</td>
+            <td>{{ $fe['mileage'] }}</td>
+            <td class="danger bold">DRAIN</td>
+            <td class="danger bold">{{ $fe['volume'] ? number_format($fe['volume'], 2) : '—' }}</td>
+            <td>—</td>
+            <td>—</td>
         </tr>
         @endif
         @endforeach

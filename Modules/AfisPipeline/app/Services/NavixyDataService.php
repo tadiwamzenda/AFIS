@@ -225,7 +225,32 @@ class NavixyDataService
         }
     }
 
-    // ─── (Engine Hours)) ───────────────────────────────────
+    public function getFuelSensorReadings(
+        int    $trackerId,
+        int    $sensorId,
+        Carbon $from,
+        Carbon $to,
+        int    $instance = 1
+    ): array {
+        try {
+            $hash     = $this->auth->getHash($instance);
+            $response = Http::timeout(60)
+                ->withHeaders(['Content-Type' => 'application/json'])
+                ->post("{$this->baseUrl}/tracker/sensor/data/read", [
+                    'hash'       => $hash,
+                    'tracker_id' => $trackerId,
+                    'sensor_id'  => $sensorId,
+                    'from'       => $from->format('Y-m-d H:i:s'),
+                    'to'         => $to->format('Y-m-d H:i:s'),
+                ]);
+            $data = $response->json();
+            if (empty($data['success'])) return [];
+            return $data['list'] ?? [];
+        } catch (\Throwable $e) {
+            Log::warning("NavixyDataService: getFuelSensorReadings failed", ['error' => $e->getMessage()]);
+            return [];
+        }
+    }
 
     public function getTrackerSensors(int $trackerId, int $instance = 1): array
     {
@@ -238,9 +263,14 @@ class NavixyDataService
                     'tracker_id' => $trackerId,
                 ]);
             $data = $response->json();
-            return $data['list'] ?? [];
+            return collect($data['list'] ?? [])
+                ->filter(fn($s) => $s['sensor_type'] === 'fuel')
+                ->values()
+                ->toArray();
         } catch (\Throwable $e) {
             return [];
         }
     }
+    
+   
 }

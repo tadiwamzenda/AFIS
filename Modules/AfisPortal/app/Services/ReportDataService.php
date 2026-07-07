@@ -188,34 +188,104 @@ class ReportDataService
                 'drain_litres'   => $totalDrain,
                 'consumption'    => $consumption,
                 'trips'          => $vTrips->count(),
-                'fuel_events' => collect(
-                    AfisFuelEvent::where('tracker_id', $tracker->id)
-                        ->whereBetween('occurred_at', [$from, $to])
-                        ->orderBy('occurred_at')
-                        ->get()
-                )->map(function($f) use ($tracker, $from) {
-                    // Get daily mileage for this day
-                    $dayMileage = AfisMileageDaily::where('tracker_id', $tracker->id)
-                        ->where('date', Carbon::parse($f->occurred_at)->toDateString())
-                        ->value('mileage_km') ?? 0;
+                'fuel_events' => (function() use ($tracker, $from, $to) {
+                // All fuel readings for this tracker in period (sorted by time)
+                $allReadings = AfisFuelEvent::where('tracker_id', $tracker->id)
+                    ->whereBetween('occurred_at', [$from, $to])
+                    ->orderBy('occurred_at')
+                    ->get();
 
-                    $volume   = $f->volume_litres;
-                    $consumed = $volume; // fuel level value = volume consumed/added
+                if ($allReadings->isEmpty()) return [];
+
+                $result      = [];
+                $prevReading = null;
+                $refuelStart = null;
+                $dayData     = [];
+
+                // Group readings by date
+                $byDate = $allReadings->groupBy(
+                    fn($r) => Carbon::parse($r->occurred_at)->toDateString()
+                );
+
+                foreach ($byDate as $date => $readings) {
+                    $dayMileage  = AfisMileageDaily::where('tracker_id', $tracker->id)
+                        ->where('date', $date)->value('mileage_km') ?? 0;
+
+                    $levels      = $readings->pluck('volume_litres')->map(fn($v) => (float)$v)->values();
+                    $startLevel  = $levels->first();
+                    $endLevel    = $levels->last();
+
+                    // Detect refuels — significant upward jumps (>10L)
+                    $refuelCount  = 0;
+                    $refuelVolume = 0;
+                    for ($i = 1; $i < $levels->count(); $i++) {
+                        $jump = $levels[$i] - $levels[$i - 1];
+                        if ($jump > 10) {
+                            $refuelCount++;
+                            $refuelVolume += $jump;
+                        }
+                    }
+
+                    // Detect drains — significant downward jumps (>15L not explained by consumption)
+                    $drainCount  = 0;
+                    $drainVolume = 0;
+                    for ($i = 1; $i < $levels->count(); $i++) {
+                        $drop = $levels[$i - 1] - $levels[$i];
+                        if ($drop > 15) {
+                            $drainCount++;
+                            $drainVolume += $drop;
+                        }
+                    }
+
+                    // Consumed = start level - end level + any refuels added
+                    $consumed = round(max(0, $startLevel - $endLevel + $refuelVolume), 2);
                     $rate     = ($dayMileage > 0 && $consumed > 0)
-                        ? round($dayMileage / $consumed, 4)
-                        : null;
+                        ? round($dayMileage / $consumed, 4) : null;
 
-                    return [
-                        'date'     => Carbon::parse($f->occurred_at)->format('d.m.Y'),
-                        'type'     => $f->event_type,
-                        'mileage'  => round($dayMileage, 2),
-                        'refuels'  => 1,
-                        'volume'   => $volume ? round($volume, 2) : null,
-                        'consumed' => $consumed ? round($consumed, 2) : null,
-                        'rate'     => $rate,
-                        'address'  => $f->address,
-                    ];
-                })->toArray(),
+                    // Only add row if there was meaningful activity
+                    if ($dayMileage > 0 || $refuelCount > 0 || $drainCount > 0) {
+                        if ($refuelCount > 0) {
+                            $result[] = [
+                                'date'     => Carbon::parse($date)->format('d.m.Y'),
+                                'type'     => 'fueling',
+                                'mileage'  => round($dayMileage, 2),
+                                'refuels'  => $refuelCount,
+                                'volume'   => round($refuelVolume, 2),
+                                'consumed' => $consumed,
+                                'rate'     => $rate,
+                                'address'  => $readings->first()?->address,
+                            ];
+                        } elseif ($dayMileage > 0) {
+                            // No refuel but vehicle was driven — show consumption only
+                            $result[] = [
+                                'date'     => Carbon::parse($date)->format('d.m.Y'),
+                                'type'     => 'normal',
+                                'mileage'  => round($dayMileage, 2),
+                                'refuels'  => 0,
+                                'volume'   => null,
+                                'consumed' => $consumed > 0 ? $consumed : null,
+                                'rate'     => $rate,
+                                'address'  => null,
+                            ];
+                        }
+
+                        if ($drainCount > 0) {
+                            $result[] = [
+                                'date'     => Carbon::parse($date)->format('d.m.Y'),
+                                'type'     => 'drain',
+                                'mileage'  => round($dayMileage, 2),
+                                'refuels'  => 0,
+                                'volume'   => round($drainVolume, 2),
+                                'consumed' => null,
+                                'rate'     => null,
+                                'address'  => $readings->last()?->address,
+                            ];
+                        }
+                    }
+                }
+
+                return $result;
+            })(),
             ];
         }
         
