@@ -1,6 +1,6 @@
 @extends('core::layouts.client')
-@section('title', 'AI Reports')
-@section('page-title', 'AI Reports')
+@section('title', 'Reports')
+@section('page-title', 'Reports')
 @section('content')
-    <livewire:afis-report-viewer :client-id="$client->id" />
+    <livewire:afis-report-generator :is-admin="false" :client-id="$client->id" />
 @endsection

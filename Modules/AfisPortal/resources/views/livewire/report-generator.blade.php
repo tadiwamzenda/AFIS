@@ -120,7 +120,7 @@
                     </p>
                 </div>
                 <div class="flex items-center gap-3">
-                    <a href="{{ route('admin.afis.reports.download', $report->id) }}"
+                    <a href="{{ $isAdmin ? route('admin.afis.reports.download', $report->id) : route('client.reports.download', $report->id) }}"
                         class="inline-flex items-center gap-1 text-xs text-brand-600 hover:text-brand-700 font-medium px-3 py-1.5 border border-brand-200 rounded-lg hover:bg-brand-50 transition-colors">
                         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
                         Download

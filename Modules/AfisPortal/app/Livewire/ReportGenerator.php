@@ -59,11 +59,19 @@ class ReportGenerator extends Component
             return null;
         }
 
-        return redirect()->route('admin.afis.reports.standard', [
-            'clientId' => $this->clientId,
-            'from'     => $this->fromDate,
-            'to'       => $this->toDate,
-            'groupId'  => $this->groupId,
+        if ($this->isAdmin) {
+            return redirect()->route('admin.afis.reports.standard', [
+                'clientId' => $this->clientId,
+                'from'     => $this->fromDate,
+                'to'       => $this->toDate,
+                'groupId'  => $this->groupId,
+            ]);
+        }
+
+        return redirect()->route('client.reports.generate.standard', [
+            'from'    => $this->fromDate,
+            'to'      => $this->toDate,
+            'groupId' => $this->groupId,
         ]);
     }
 
@@ -76,11 +84,19 @@ class ReportGenerator extends Component
             return null;
         }
 
-        return redirect()->route('admin.afis.reports.ai', [
-            'clientId' => $this->clientId,
-            'from'     => $this->fromDate,
-            'to'       => $this->toDate,
-            'groupId'  => $this->groupId,
+        if ($this->isAdmin) {
+            return redirect()->route('admin.afis.reports.ai', [
+                'clientId' => $this->clientId,
+                'from'     => $this->fromDate,
+                'to'       => $this->toDate,
+                'groupId'  => $this->groupId,
+            ]);
+        }
+
+        return redirect()->route('client.reports.generate.ai', [
+            'from'    => $this->fromDate,
+            'to'      => $this->toDate,
+            'groupId' => $this->groupId,
         ]);
     }
 
@@ -99,11 +115,11 @@ class ReportGenerator extends Component
             : collect();
 
         $groups = $this->clientId
-            ? AfisTrackerGroup::where('client_id', $this->clientId)->orderBy('title')->get()
-            : collect();
+        ? AfisTrackerGroup::where('client_id', $this->clientId)->orderBy('title')->get()
+        : collect();
 
         $recentReports = \Modules\AfisPortal\Models\AfisGeneratedReport::with('client', 'generatedBy')
-            ->when($this->clientId, fn($q) => $q->where('client_id', $this->clientId))
+            ->where('client_id', $this->clientId)
             ->latest()
             ->limit(20)
             ->get();

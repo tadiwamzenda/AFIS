@@ -17,6 +17,7 @@ Route::middleware('auth')->prefix('client')->name('client.')->group(function () 
     Route::get('/dashboard',                [PortalController::class, 'clientDashboard'])->name('dashboard');
     Route::get('/vehicle/{trackerId}',      [PortalController::class, 'clientVehicleInspector'])->name('vehicle');
     Route::get('/reports',                  [PortalController::class, 'clientReports'])->name('reports');
+    Route::get('/reports/download/{id}',    [ReportController::class, 'download'])->name('reports.download');
 });
 
 // Report generation routes
@@ -41,4 +42,5 @@ Route::middleware('auth')->prefix('admin/afis')->name('admin.afis.')->group(func
     Route::get('/generate/ai',                   [ReportController::class, 'aiReport'])->name('reports.ai');
     Route::get('/generate/download/{id}',        [ReportController::class, 'download'])->name('reports.download');
     Route::delete('/generate/delete/{id}',       [ReportController::class, 'destroy'])->name('reports.destroy');
+    
 });
