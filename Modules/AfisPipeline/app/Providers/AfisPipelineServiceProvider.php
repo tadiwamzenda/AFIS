@@ -37,6 +37,7 @@ class AfisPipelineServiceProvider extends ServiceProvider
     {
         $this->app->register(EventServiceProvider::class);
         $this->app->register(RouteServiceProvider::class);
+        $this->app->singleton(\Modules\AfisPipeline\Services\FuelDataParser::class);
     }
 
     protected function registerViews(): void

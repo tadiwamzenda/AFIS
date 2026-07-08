@@ -10,6 +10,7 @@ use Modules\AfisPipeline\Models\AfisTrip;
 use Modules\AfisPipeline\Models\AfisMileageDaily;
 use Modules\AfisPipeline\Models\AfisFuelEvent;
 use Modules\AfisPipeline\Models\AfisDeviceAlert;
+use Modules\AfisPipeline\Models\AfisFuelDaily;
 
 class ReportDataService
 {
@@ -188,104 +189,26 @@ class ReportDataService
                 'drain_litres'   => $totalDrain,
                 'consumption'    => $consumption,
                 'trips'          => $vTrips->count(),
-                'fuel_events' => (function() use ($tracker, $from, $to) {
-                // All fuel readings for this tracker in period (sorted by time)
-                $allReadings = AfisFuelEvent::where('tracker_id', $tracker->id)
-                    ->whereBetween('occurred_at', [$from, $to])
-                    ->orderBy('occurred_at')
-                    ->get();
-
-                if ($allReadings->isEmpty()) return [];
-
-                $result      = [];
-                $prevReading = null;
-                $refuelStart = null;
-                $dayData     = [];
-
-                // Group readings by date
-                $byDate = $allReadings->groupBy(
-                    fn($r) => Carbon::parse($r->occurred_at)->toDateString()
-                );
-
-                foreach ($byDate as $date => $readings) {
-                    $dayMileage  = AfisMileageDaily::where('tracker_id', $tracker->id)
-                        ->where('date', $date)->value('mileage_km') ?? 0;
-
-                    $levels      = $readings->pluck('volume_litres')->map(fn($v) => (float)$v)->values();
-                    $startLevel  = $levels->first();
-                    $endLevel    = $levels->last();
-
-                    // Detect refuels — significant upward jumps (>10L)
-                    $refuelCount  = 0;
-                    $refuelVolume = 0;
-                    for ($i = 1; $i < $levels->count(); $i++) {
-                        $jump = $levels[$i] - $levels[$i - 1];
-                        if ($jump > 10) {
-                            $refuelCount++;
-                            $refuelVolume += $jump;
-                        }
-                    }
-
-                    // Detect drains — significant downward jumps (>15L not explained by consumption)
-                    $drainCount  = 0;
-                    $drainVolume = 0;
-                    for ($i = 1; $i < $levels->count(); $i++) {
-                        $drop = $levels[$i - 1] - $levels[$i];
-                        if ($drop > 15) {
-                            $drainCount++;
-                            $drainVolume += $drop;
-                        }
-                    }
-
-                    // Consumed = start level - end level + any refuels added
-                    $consumed = round(max(0, $startLevel - $endLevel + $refuelVolume), 2);
-                    $rate     = ($dayMileage > 0 && $consumed > 0)
-                        ? round($dayMileage / $consumed, 4) : null;
-
-                    // Only add row if there was meaningful activity
-                    if ($dayMileage > 0 || $refuelCount > 0 || $drainCount > 0) {
-                        if ($refuelCount > 0) {
-                            $result[] = [
-                                'date'     => Carbon::parse($date)->format('d.m.Y'),
-                                'type'     => 'fueling',
-                                'mileage'  => round($dayMileage, 2),
-                                'refuels'  => $refuelCount,
-                                'volume'   => round($refuelVolume, 2),
-                                'consumed' => $consumed,
-                                'rate'     => $rate,
-                                'address'  => $readings->first()?->address,
-                            ];
-                        } elseif ($dayMileage > 0) {
-                            // No refuel but vehicle was driven — show consumption only
-                            $result[] = [
-                                'date'     => Carbon::parse($date)->format('d.m.Y'),
-                                'type'     => 'normal',
-                                'mileage'  => round($dayMileage, 2),
-                                'refuels'  => 0,
-                                'volume'   => null,
-                                'consumed' => $consumed > 0 ? $consumed : null,
-                                'rate'     => $rate,
-                                'address'  => null,
-                            ];
-                        }
-
-                        if ($drainCount > 0) {
-                            $result[] = [
-                                'date'     => Carbon::parse($date)->format('d.m.Y'),
-                                'type'     => 'drain',
-                                'mileage'  => round($dayMileage, 2),
-                                'refuels'  => 0,
-                                'volume'   => round($drainVolume, 2),
-                                'consumed' => null,
-                                'rate'     => null,
-                                'address'  => $readings->last()?->address,
-                            ];
-                        }
-                    }
-                }
-
-                return $result;
-            })(),
+                'fuel_events' => AfisFuelDaily::where('tracker_id', $tracker->id)
+                ->whereBetween('date', [$from->toDateString(), $to->toDateString()])
+                ->where(function($q) {
+                    $q->where('refuel_count', '>', 0)
+                    ->orWhere('has_drain', true)
+                    ->orWhere('consumed_litres', '>', 0);
+                })
+                ->orderBy('date')
+                ->get()
+                ->map(fn($f) => [
+                    'date'     => $f->date->format('d.m.Y'),
+                    'type'     => $f->has_drain && $f->refuel_count === 0 ? 'drain' : 'fueling',
+                    'mileage'  => $f->mileage_km,
+                    'refuels'  => $f->refuel_count,
+                    'volume'   => $f->volume_litres,
+                    'consumed' => $f->consumed_litres,
+                    'rate'     => $f->consumption_km_per_litre,
+                    'address'  => null,
+                ])
+                ->toArray(),
             ];
         }
         
@@ -358,34 +281,57 @@ class ReportDataService
             ->values()
             ->toArray();
 
-            // ── Flat fuel list sorted by date for report ─────────────────────
-        $fuelFlat = collect($vehicles)
-            ->flatMap(fn($v) => collect($v['fuel_events'])->map(fn($fe) => array_merge($fe, ['label' => $v['label']])))
-            ->sortBy('date')
-            ->values()
-            ->toArray();
+        // ── Flat fuel list from afis_fuel_daily (sorted by date) ─────────
+            $fuelFlat = AfisFuelDaily::whereIn('tracker_id', $trackerIds)
+                ->whereBetween('date', [$from->toDateString(), $to->toDateString()])
+                ->where(function($q) {
+                    $q->where('refuel_count', '>', 0)
+                    ->orWhere('has_drain', true)
+                    ->orWhere('consumed_litres', '>', 0);
+                })
+                ->orderBy('date')
+                ->orderBy('tracker_id')
+                ->get()
+                ->map(function($f) {
+                    $tracker = AfisTracker::find($f->tracker_id);
+                    $group   = \Modules\AfisPipeline\Models\AfisTrackerGroup::where('navixy_group_id', $tracker?->navixy_group_id)->first();
+                    return [
+                        'label'    => $f->vehicle_label ?? $tracker?->label,
+                        'group'    => $group?->title ?? '—',
+                        'date'     => $f->date->format('d.m.Y'),
+                        'type'     => $f->has_drain && $f->refuel_count === 0 ? 'drain' : 'fueling',
+                        'mileage'  => $f->mileage_km,
+                        'refuels'  => $f->refuel_count,
+                        'volume'   => $f->volume_litres,
+                        'consumed' => $f->consumed_litres,
+                        'rate'     => $f->consumption_km_per_litre,
+                        'address'  => null,
+                    ];
+                })
+                ->toArray();
 
-        return [
-            'client'         => $client,
-            'from'           => $from,
-            'to'             => $to,
-            'fleet_size'     => $trackers->count(),
-            'total_mileage'  => round($totalMileage, 2),
-            'weekend_km'     => round($weekendKm, 2),
-            'after_hrs_km'   => round($afterHrsKm, 2),
-            'vehicles'       => $vehicles,
-            'weekend_dates' => $weekendDates,
-            'speeding_detail' => $speedingDetail,
-            'speeding'       => $speedingSummary,
-            'weekend'        => $weekendSummary,
-            'after_hours'    => $afterHrsSummary,
-            'fuel'           => $fuelSummary,
-            'fuel_flat'      => $fuelFlat,
-            'groups'         => $groupBreakdown,
-            'speed_limit'    => $this->speedLimit,
-            'generated_at'   => Carbon::now(),
+                return [
+            'client'          => $client,
+            'from'            => $from,
+            'to'              => $to,
+            'fleet_size'      => $trackers->count(),
+            'total_mileage'   => round($totalMileage, 2),
+            'weekend_km'      => round($weekendKm, 2),
+            'after_hrs_km'    => round($afterHrsKm, 2),
+            'vehicles'        => $vehicles,
+            'speeding'        => $speedingSummary,
+            'speeding_detail' => $speedingDetail ?? [],
+            'weekend'         => $weekendSummary,
+            'after_hours'     => $afterHrsSummary,
+            'fuel'            => $fuelSummary,
+            'fuel_flat'       => $fuelFlat,
+            'groups'          => $groupBreakdown,
+            'weekend_dates'   => $weekendDates,
+            'speed_limit'     => $this->speedLimit,
+            'generated_at'    => Carbon::now(),
         ];
     }
+    
 
     private function isWeekendOrHoliday(Carbon $date): bool
     {

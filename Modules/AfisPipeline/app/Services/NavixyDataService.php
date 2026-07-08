@@ -119,6 +119,67 @@ class NavixyDataService
         return $result;
     }
 
+    // ─── Navixy plugin 95 — fuel report ──────────────────────────────────────
+
+    public function generateNavixyFuelReport(
+        array  $trackerIds,
+        Carbon $from,
+        Carbon $to,
+        int    $instance = 1
+    ): ?int {
+        try {
+            $hash     = $this->auth->getHash($instance);
+            $response = Http::timeout(60)
+                ->withHeaders(['Content-Type' => 'application/json'])
+                ->post("{$this->baseUrl}/report/tracker/generate", [
+                    'hash'        => $hash,
+                    'title'       => 'AFIS Fuel ' . $from->format('Y-m-d'),
+                    'trackers'    => $trackerIds,
+                    'from'        => $from->format('Y-m-d H:i:s'),
+                    'to'          => $to->format('Y-m-d H:i:s'),
+                    'time_filter' => [
+                        'from'     => '00:00:00',
+                        'to'       => '23:59:59',
+                        'weekdays' => [1, 2, 3, 4, 5, 6, 7],
+                    ],
+                    'plugin' => [
+                        'hide_empty_tabs' => true,
+                        'plugin_id'       => 95,
+                    ],
+                ]);
+
+            $data = $response->json();
+            if (empty($data['success'])) {
+                Log::warning('NavixyDataService: fuel report generate failed', ['data' => $data]);
+                return null;
+            }
+            return $data['id'];
+        } catch (\Throwable $e) {
+            Log::warning('NavixyDataService: generateNavixyFuelReport error', ['error' => $e->getMessage()]);
+            return null;
+        }
+    }
+
+    public function downloadNavixyFuelReport(int $reportId, int $instance = 1): ?string
+    {
+        try {
+            $hash     = $this->auth->getHash($instance);
+            $response = Http::timeout(120)
+                ->withHeaders(['Content-Type' => 'application/json'])
+                ->post("{$this->baseUrl}/report/tracker/download", [
+                    'hash'      => $hash,
+                    'report_id' => $reportId,
+                    'format'    => 'xlsx',
+                ]);
+
+            if (!$response->successful()) return null;
+            return $response->body();
+        } catch (\Throwable $e) {
+            Log::warning('NavixyDataService: downloadNavixyFuelReport error', ['error' => $e->getMessage()]);
+            return null;
+        }
+    }
+
     // ─── Tracker groups ───────────────────────────────────────────────────────
 
     public function getTrackerGroups(int $instance = 1): array

@@ -12,10 +12,14 @@ use Modules\AfisPipeline\Models\AfisTrackerGroup;
 use Modules\AfisPipeline\Models\AfisMileageDaily;
 use Modules\AfisPipeline\Models\AfisDeviceAlert;
 use Modules\AfisPipeline\Models\AfisFuelEvent;
+use Modules\AfisPipeline\Models\AfisFuelDaily;
+use Modules\AfisPipeline\Services\FuelDataParser;
 
 class PipelineSyncService
 {
-    public function __construct(private NavixyDataService $navixy) {}
+    public function __construct(
+        private NavixyDataService $navixy,
+        private FuelDataParser $fuelParser,) {}
 
     public function syncClient(Client $client): AfisSyncLog
     {
@@ -110,6 +114,7 @@ class PipelineSyncService
                 }
             }
 
+
             // ── Step 4: Sync daily mileage (batch) ────────────────────────────
             $mileageData = [];
             foreach (array_chunk($trackerIds, 50) as $chunk) {
@@ -179,6 +184,32 @@ class PipelineSyncService
                     ]
                 );
             }
+            }
+
+            // ── Step 6: Fuel data (once per day per client) ───────────────────
+            $today = now()->toDateString();
+            $fuelAlreadySynced = AfisFuelDaily::where('client_id', $client->id)
+                ->where('date', $today)
+                ->exists();
+
+            if (!$fuelAlreadySynced) {
+                // Only sync fuel for trackers that have fuel sensors (those with fuel events)
+                $fuelTrackerIds = \Modules\AfisPipeline\Models\AfisFuelEvent::whereIn('tracker_id', $knownTrackers->pluck('id'))
+                    ->distinct()
+                    ->pluck('navixy_tracker_id')
+                    ->toArray();
+
+                if (!empty($fuelTrackerIds)) {
+                    $fuelSynced = $this->fuelParser->syncFuelData(
+                        $client,
+                        $fuelTrackerIds,
+                        now()->startOfDay(),
+                        now()->endOfDay(),
+                        $instance,
+                        $this->navixy
+                    );
+                    Log::info("PipelineSyncService: fuel synced {$fuelSynced} records for {$client->name}");
+                }
             }
 
             $log->update([
