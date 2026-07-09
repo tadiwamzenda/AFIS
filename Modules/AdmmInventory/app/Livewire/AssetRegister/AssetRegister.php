@@ -6,6 +6,11 @@ use Livewire\Component;
 use Livewire\WithPagination;
 use Modules\AdmmInventory\Models\AssetRecord;
 use Modules\AuditLog\Services\AuditLogService;
+use Maatwebsite\Excel\Facades\Excel;
+use Maatwebsite\Excel\Concerns\FromCollection;
+use Maatwebsite\Excel\Concerns\WithHeadings;
+use Maatwebsite\Excel\Concerns\WithStyles;
+use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
 class AssetRegister extends Component
 {
@@ -116,10 +121,96 @@ class AssetRegister extends Component
         unset($this->changes[$id]);
     }
 
-    // ─── Render ──────────────────────────────────────────────────────────────
-    public function render()
+    // ─── Export Excel ─────────────────────────────────────────────────
+    public function exportExcel()
     {
-        $records = AssetRecord::query()
+        $records = $this->getFilteredQuery()->get();
+
+        return Excel::download(
+            new class($records) implements FromCollection, WithHeadings, WithStyles {
+                public function __construct(private $records) {}
+
+                public function collection()
+                {
+                    return $this->records->map(fn($r) => [
+                        $r->installation_date?->format('d/m/Y') ?? '',
+                        $r->client ?? '',
+                        $r->vehicle_reg_no ?? '',
+                        $r->vehicle_fleet_no ?? '',
+                        $r->vehicle_make ?? '',
+                        $r->gps_device_imei ?? '',
+                        $r->gps_device_name ?? '',
+                        $r->gps_device_type ?? '',
+                        $r->configuration ?? '',
+                        $r->gps_device_state ?? '',
+                        $r->sim_card_serial_no ?? '',
+                        $r->sim_card_phone_no ?? '',
+                        $r->sim_card_type ?? '',
+                        $r->sim_card_isp ?? '',
+                        $r->location ?? '',
+                        $r->technician ?? '',
+                        $r->comment ?? '',
+                        $r->client_name ?? '',
+                        $r->client_contact ?? '',
+                        $r->client_email ?? '',
+                    ]);
+                }
+
+                public function headings(): array
+                {
+                    return [
+                        'Installation Date', 'Client', 'Vehicle Reg No', 'Vehicle Fleet No',
+                        'Vehicle Make', 'GPS Device IMEI', 'GPS Device Name', 'GPS Device Type',
+                        'Configuration', 'GPS Device State', 'Sim Card Serial No', 'Sim Card Phone No',
+                        'Sim Card Type', 'SIM Card ISP', 'Location', 'Technician(Installer)',
+                        'Comment', 'Client Name', 'Client Contact', 'Client Email',
+                    ];
+                }
+
+                public function styles(Worksheet $sheet)
+                {
+                    return [
+                        1 => [
+                            'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
+                            'fill' => [
+                                'fillType'   => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
+                                'startColor' => ['rgb' => '1a5c4a'],
+                            ],
+                        ],
+                    ];
+                }
+            },
+            'asset-register-' . now()->format('Y-m-d') . '.xlsx'
+        );
+    }
+
+    // ─── Export PDF (redirects to controller to avoid Livewire limits) ─
+    public function exportPdf()
+    {
+        $params = http_build_query([
+            'fInstallDate' => $this->fInstallDate,
+            'fClient'      => $this->fClient,
+            'fVehicleReg'  => $this->fVehicleReg,
+            'fFleetNo'     => $this->fFleetNo,
+            'fVehicleMake' => $this->fVehicleMake,
+            'fImei'        => $this->fImei,
+            'fDeviceName'  => $this->fDeviceName,
+            'fDeviceType'  => $this->fDeviceType,
+            'fConfig'      => $this->fConfig,
+            'fDeviceState' => $this->fDeviceState,
+            'fSimSerial'   => $this->fSimSerial,
+            'fSimPhone'    => $this->fSimPhone,
+            'fSimType'     => $this->fSimType,
+            'fSimIsp'      => $this->fSimIsp,
+            'fTechnician'  => $this->fTechnician,
+        ]);
+        return redirect(route('admin.admm.asset-register.export-pdf') . '?' . $params);
+    }
+
+    // ─── Shared filtered query ────────────────────────────────────────
+    private function getFilteredQuery()
+    {
+        return AssetRecord::query()
             ->when($this->fInstallDate, fn($q) => $q->where('installation_date', 'like', "%{$this->fInstallDate}%"))
             ->when($this->fClient,      fn($q) => $q->where('client',             'like', "%{$this->fClient}%"))
             ->when($this->fVehicleReg,  fn($q) => $q->where('vehicle_reg_no',     'like', "%{$this->fVehicleReg}%"))
@@ -139,8 +230,14 @@ class AssetRegister extends Component
             ->orderByRaw("FIELD(location, 'CLIENT', 'STOCK', 'LOST')")
             ->orderByRaw("CASE WHEN installation_date IS NULL THEN 1 ELSE 0 END")
             ->orderBy('installation_date')
-            ->orderBy('id')
-            ->get();
+            ->orderBy('id');
+    }
+
+    // ─── Render ──────────────────────────────────────────────────────────────
+
+    public function render()
+    {
+        $records = $this->getFilteredQuery()->get();
 
         $allRecords = AssetRecord::query();
         $simsQuery  = AssetRecord::whereNotNull('sim_card_phone_no')->where('sim_card_phone_no', '!=', '');
