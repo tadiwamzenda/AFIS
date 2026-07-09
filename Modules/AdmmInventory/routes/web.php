@@ -41,4 +41,8 @@ Route::middleware(['auth'])->prefix('admin/admm')->name('admin.admm.')->group(fu
     Route::get('/asset-register', function () {
         return view('admminventory::asset-register.index');
     })->name('asset-register.index');
+    //Stock-management
+    Route::get('/asset-stock', function () {
+    return view('admminventory::stock-management.index');
+    })->name('asset-stock.index');
 });

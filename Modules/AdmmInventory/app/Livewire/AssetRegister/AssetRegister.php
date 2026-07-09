@@ -142,11 +142,16 @@ class AssetRegister extends Component
             ->orderBy('id')
             ->get();
 
+        $allRecords = AssetRecord::query();
+        $simsQuery  = AssetRecord::whereNotNull('sim_card_phone_no')->where('sim_card_phone_no', '!=', '');
+
         $stats = [
-            'total'  => AssetRecord::count(),
-            'client' => AssetRecord::where('location', 'CLIENT')->count(),
-            'stock'  => AssetRecord::where('location', 'STOCK')->count(),
-            'lost'   => AssetRecord::where('location', 'LOST')->count(),
+            'total'          => AssetRecord::count(),
+            'devices_client' => AssetRecord::where('location', 'CLIENT')->count(),
+            'devices_stock'  => AssetRecord::where('location', 'STOCK')->count(),
+            'sims_client'    => $simsQuery->clone()->where('location', 'CLIENT')->count(),
+            'sims_stock'     => $simsQuery->clone()->where('location', 'STOCK')->count(),
+            'lost'           => AssetRecord::where('location', 'LOST')->count(),
         ];
 
         return view('admminventory::livewire.asset-register.index', compact('records', 'stats'));

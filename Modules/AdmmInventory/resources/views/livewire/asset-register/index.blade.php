@@ -4,10 +4,14 @@
     {{-- Stats + Actions --}}
     <div class="flex items-center gap-4 flex-wrap flex-shrink-0 mb-3">
         <div class="flex items-center gap-3 text-sm text-gray-500">
-            <span class="font-medium text-gray-800">{{ number_format($stats['total']) }} total</span>
-            <span class="text-green-600 font-medium">{{ number_format($stats['client']) }} client</span>
-            <span class="text-blue-600 font-medium">{{ number_format($stats['stock']) }} stock</span>
+            <span class="font-medium text-gray-800">{{ number_format($stats['total']) }} total records</span>
+            <span class="text-blue-600 font-medium">📱 {{ number_format($stats['devices_client']) }} devices with client</span>
+            <span class="text-blue-400 font-medium">{{ number_format($stats['devices_stock']) }} devices in stock</span>
+            <span class="text-green-600 font-medium">📶 {{ number_format($stats['sims_client']) }} SIMs with client</span>
+            <span class="text-green-400 font-medium">{{ number_format($stats['sims_stock']) }} SIMs in stock</span>
+            @if($stats['lost'] > 0)
             <span class="text-red-600 font-medium">{{ number_format($stats['lost']) }} lost</span>
+            @endif
         </div>
         <div class="ml-auto flex items-center gap-2">
             <a href="{{ route('admin.admm.asset-register.import') }}"

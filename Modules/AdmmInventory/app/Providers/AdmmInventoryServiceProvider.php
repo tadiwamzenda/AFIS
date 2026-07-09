@@ -3,6 +3,8 @@
 namespace Modules\AdmmInventory\Providers;
 
 use Illuminate\Support\ServiceProvider;
+use Modules\AdmmInventory\Console\TakeStockSnapshotCommand;
+use Illuminate\Console\Scheduling\Schedule;
 
 class AdmmInventoryServiceProvider extends ServiceProvider
 {
@@ -15,6 +17,14 @@ class AdmmInventoryServiceProvider extends ServiceProvider
         $this->registerViews();
         $this->loadMigrationsFrom(module_path($this->moduleName, 'database/migrations'));
 
+        $this->commands([
+            TakeStockSnapshotCommand::class,
+        ]);
+
+        $this->callAfterResolving(Schedule::class, function (Schedule $schedule) {
+            $schedule->command('admm:snapshot')->dailyAt('23:55');
+        });
+
         \Livewire\Livewire::component('admm-sim-card-index', \Modules\AdmmInventory\Livewire\SimCards\SimCardIndex::class);
         \Livewire\Livewire::component('admm-sim-card-form',  \Modules\AdmmInventory\Livewire\SimCards\SimCardForm::class);
         \Livewire\Livewire::component('admm-client-index', \Modules\AdmmInventory\Livewire\Clients\ClientIndex::class);
@@ -23,6 +33,8 @@ class AdmmInventoryServiceProvider extends ServiceProvider
         \Livewire\Livewire::component('admm-gps-device-form',  \Modules\AdmmInventory\Livewire\GpsDevices\GpsDeviceForm::class);
         \Livewire\Livewire::component('admm-accessory-index', \Modules\AdmmInventory\Livewire\Accessories\AccessoryIndex::class);
         \Livewire\Livewire::component('admm-accessory-form',  \Modules\AdmmInventory\Livewire\Accessories\AccessoryForm::class);
+        \Livewire\Livewire::component('admm-asset-register', \Modules\AdmmInventory\Livewire\AssetRegister\AssetRegister::class);
+        \Livewire\Livewire::component('admm-stock-management', \Modules\AdmmInventory\Livewire\StockManagement\StockManagement::class);
     }
 
     public function register(): void

@@ -55,10 +55,10 @@
                     Asset Register
                 </a>
 
-                @php [$active, $cls] = $navLink('', 'Accessories', '', 'admin.admm.accessories.*'); @endphp
-                <a href="{{ route('admin.admm.accessories.index') }}" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors {{ $cls }}">
-                    <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
-                    Accessories
+                @php [$active, $cls] = $navLink('', 'Asset Stock', '', 'admin.admm.asset-stock.*'); @endphp
+                <a href="{{ route('admin.admm.asset-stock.index') }}" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors {{ $cls }}">
+                <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+                Asset Stock
                 </a>
 
                 @php [$active, $cls] = $navLink('', 'Reports', '', 'admin.admm.reports.*'); @endphp
