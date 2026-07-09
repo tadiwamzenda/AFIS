@@ -46,5 +46,12 @@ Route::middleware(['auth'])->prefix('admin/admm')->name('admin.admm.')->group(fu
     return view('admminventory::stock-management.index');
     })->name('asset-stock.index');
     // Asset Register PDF export
-    Route::get('/asset-register/export-pdf', [\Modules\AdmmInventory\Http\Controllers\AssetRegisterController::class, 'exportPdf'])->name('asset-register.export-pdf');
+    Route::get('/asset-register/export-pdf', [\Modules\AdmmInventory\Http\Controllers\AssetRegisterController::class, 'exportPdf'])
+    ->name('asset-register.export-pdf');
+
+    Route::get('/asset-stock/export-pdf', [\Modules\AdmmInventory\Http\Controllers\StockManagementController::class, 'exportPdf'])
+    ->name('asset-stock.export-pdf');
+    
     });
+
+    

@@ -1,25 +1,35 @@
 <?php
 
-namespace Modules\AdmmInventory\Livewire\StockManagement;
+namespace Modules\AdmmInventory\Http\Controllers;
 
-use Carbon\Carbon;
-use Livewire\Component;
+use App\Http\Controllers\Controller;
 use Barryvdh\DomPDF\Facade\Pdf;
+use Carbon\Carbon;
 use Modules\AdmmInventory\Models\StockSnapshot;
 use Modules\AdmmInventory\Services\StockSnapshotService;
 
-class StockManagement extends Component
+class StockManagementController extends Controller
 {
-    public string $trendView = 'weekly'; // weekly | monthly
-
-    public function switchTrend(string $view): void
+    public function exportPdf()
     {
-        $this->trendView = $view;
-    }
+        $service    = app(StockSnapshotService::class);
+        $liveCounts = $service->getLiveCounts();
+        $weekly     = $this->getWeeklyTrend();
+        $monthly    = $this->getMonthlyTrend();
 
-    public function downloadPdf()
-    {
-        return redirect(route('admin.admm.asset-stock.export-pdf'));
+        $pdf = Pdf::loadView('admminventory::stock-management.pdf', compact(
+            'liveCounts', 'weekly', 'monthly'
+        ))
+        ->setPaper('a4', 'landscape')
+        ->setOptions([
+            'defaultFont'          => 'sans-serif',
+            'isHtml5ParserEnabled' => true,
+            'isRemoteEnabled'      => false,
+        ]);
+
+        return response($pdf->output())
+            ->header('Content-Type', 'application/pdf')
+            ->header('Content-Disposition', 'attachment; filename="asset-stock-report-' . now()->format('Y-m-d') . '.pdf"');
     }
 
     private function getWeeklyTrend(): array
@@ -49,8 +59,8 @@ class StockManagement extends Component
     {
         $months = [];
         for ($i = 11; $i >= 0; $i--) {
-            $monthEnd   = Carbon::now()->subMonths($i)->endOfMonth();
-            $label      = $monthEnd->format('M Y');
+            $monthEnd = Carbon::now()->subMonths($i)->endOfMonth();
+            $label    = $monthEnd->format('M Y');
 
             $snapshots = StockSnapshot::where('snapshot_date', '<=', $monthEnd->toDateString())
                 ->whereIn('snapshot_date', function($q) use ($monthEnd) {
@@ -65,22 +75,5 @@ class StockManagement extends Component
             $months[$label] = $snapshots;
         }
         return $months;
-    }
-
-    public function render()
-    {
-        $service    = app(StockSnapshotService::class);
-        $liveCounts = $service->getLiveCounts();
-
-        $trend = $this->trendView === 'weekly'
-            ? $this->getWeeklyTrend()
-            : $this->getMonthlyTrend();
-
-        // Get unique client names across all snapshots
-        $clients = collect($liveCounts)->pluck('client')->toArray();
-
-        return view('admminventory::livewire.stock-management.index', compact(
-            'liveCounts', 'trend', 'clients'
-        ));
     }
 }
