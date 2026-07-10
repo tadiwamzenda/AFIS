@@ -50,7 +50,7 @@ class NavixyDataService
     {
         try {
             $hash     = $this->auth->getHash($instance);
-            $response = Http::timeout(30)
+            $response = Http::timeout(120)
                 ->withHeaders(['Content-Type' => 'application/json'])
                 ->post("{$this->baseUrl}/track/list", [
                     'hash'       => $hash,
@@ -164,7 +164,7 @@ class NavixyDataService
     {
         try {
             $hash     = $this->auth->getHash($instance);
-            $response = Http::timeout(120)
+            $response = Http::timeout(30)
                 ->withHeaders(['Content-Type' => 'application/json'])
                 ->post("{$this->baseUrl}/report/tracker/download", [
                     'hash'      => $hash,

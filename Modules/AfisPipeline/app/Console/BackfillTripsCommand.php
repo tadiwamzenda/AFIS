@@ -59,7 +59,11 @@ class BackfillTripsCommand extends Command
 
             // ── 1. Trips ──────────────────────────────────────────────────────
             foreach ($trackers as $tracker) {
-                $trips = $navixy->getTrips($tracker->navixy_tracker_id, $from, $to, $instance);
+            $tripChunkStart = $from->copy();
+            while ($tripChunkStart->lt($to)) {
+                $tripChunkEnd = $tripChunkStart->copy()->addDays(30)->min($to);
+
+                $trips = $navixy->getTrips($tracker->navixy_tracker_id, $tripChunkStart, $tripChunkEnd, $instance);
 
                 foreach ($trips as $trip) {
                     if (($trip['type'] ?? '') === 'single_report') continue;
@@ -87,13 +91,18 @@ class BackfillTripsCommand extends Command
                     $tripCount++;
                 }
 
-                usleep(200000); // 0.2s delay per tracker
-            }
+                     usleep(200000); // 0.2s delay per tracker
+                      $tripChunkStart = $tripChunkEnd->copy()->addDay();
+        }
+
+       
+    }
+
 
             // ── 2. Daily mileage (batch in 30-day chunks) ─────────────────────
             $chunkStart = $from->copy();
             while ($chunkStart->lt($to)) {
-                $chunkEnd = $chunkStart->copy()->addDays(30)->min($to);
+                $chunkEnd = $chunkStart->copy()->addDays(7)->min($to);
 
                 $mileageData = [];
                 foreach (array_chunk($trackerIds, 50) as $chunk) {
@@ -214,4 +223,5 @@ class BackfillTripsCommand extends Command
 
         $this->info('Backfill complete.');
     }
+    
 }
