@@ -51,15 +51,25 @@ class SyncTrackerGroupsCommand extends Command
                         }
                     }
 
-                    AfisTrackerGroup::updateOrCreate(
-                        ['navixy_group_id' => $group['id']],
-                        [
-                            'navixy_instance' => $instance,
-                            'title'           => $group['title'],
-                            'color'           => $group['color'] ?? null,
-                            'client_id'       => $clientId,
-                        ]
-                    );
+                    $existing = AfisTrackerGroup::where('navixy_group_id', $group['id'])->first();
+
+if ($existing) {
+    $existing->update([
+        'navixy_instance' => $instance,
+        'title'           => $group['title'],
+        'color'           => $group['color'] ?? null,
+        // Only update client_id if we found a match OR if it was never set
+        'client_id'       => $clientId ?? $existing->client_id ?? 21,
+    ]);
+} else {
+    AfisTrackerGroup::create([
+        'navixy_group_id' => $group['id'],
+        'navixy_instance' => $instance,
+        'title'           => $group['title'],
+        'color'           => $group['color'] ?? null,
+        'client_id'       => $clientId ?? 21, // New unmapped groups go to MISCELLANEOUS
+    ]);
+}
 
                     if ($clientId) {
                         $this->line("  ✓ Mapped: {$group['title']} → client #{$clientId}");

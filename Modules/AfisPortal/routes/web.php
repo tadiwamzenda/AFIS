@@ -3,6 +3,7 @@
 use Illuminate\Support\Facades\Route;
 use Modules\AfisPortal\Http\Controllers\PortalController;
 use Modules\AfisPortal\Http\Controllers\ReportController;
+use Modules\AfisPortal\Http\Controllers\FleetStateReportController;
 
 // Admin AFIS routes
 Route::middleware('auth')->prefix('admin/afis')->name('admin.afis.')->group(function () {
@@ -10,8 +11,8 @@ Route::middleware('auth')->prefix('admin/afis')->name('admin.afis.')->group(func
     Route::get('/fleet/{clientId}',         [PortalController::class, 'clientFleet'])->name('client-fleet');
     Route::get('/vehicle/{trackerId}',      [PortalController::class, 'vehicleInspector'])->name('vehicle');
     Route::get('/reports/{clientId}',       [PortalController::class, 'reports'])->name('reports');
+    Route::get('/fleet/{clientId}/offline-report', [FleetStateReportController::class, 'offlineReport'])->name('fleet.offline-report');
 });
-
 // Client portal routes
 Route::middleware('auth')->prefix('client')->name('client.')->group(function () {
     Route::get('/dashboard',                [PortalController::class, 'clientDashboard'])->name('dashboard');

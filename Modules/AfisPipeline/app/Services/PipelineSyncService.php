@@ -32,38 +32,62 @@ class PipelineSyncService
         try {
             $instance = $client->navixy_instance ?? 1;
 
-            // ── Step 1: Discover trackers via master account ──────────────────
-            // Get client's group IDs from afis_tracker_groups
-            $clientGroupIds = AfisTrackerGroup::where('client_id', $client->id)
-                ->pluck('navixy_group_id')
-                ->toArray();
+        // ── Step 1: Discover trackers via master account ──────────────────
+// Get client's group IDs — scoped to this instance
+$clientGroupIds = AfisTrackerGroup::where('client_id', $client->id)
+    ->where('navixy_instance', $instance)
+    ->pluck('navixy_group_id')
+    ->toArray();
 
-            if (!empty($clientGroupIds)) {
-                // Pull ALL trackers from Navixy and filter by client's groups
-                $allNavixyTrackers = $this->navixy->getAllTrackers($instance);
+if (!empty($clientGroupIds)) {
+    $allNavixyTrackers = $this->navixy->getAllTrackers($instance);
 
-                foreach ($allNavixyTrackers as $t) {
-                    if (!in_array($t['group_id'] ?? null, $clientGroupIds)) continue;
+    foreach ($allNavixyTrackers as $t) {
+        $groupId = $t['group_id'] ?? null;
 
-                    $imei = $t['source']['device_id'] ?? null;
+        // Only process trackers that belong to THIS client's groups
+        if (!in_array($groupId, $clientGroupIds)) continue;
 
-                    AfisTracker::updateOrCreate(
-                        ['navixy_tracker_id' => $t['id']],
-                        [
-                            'client_id'       => $client->id,
-                            'navixy_group_id' => \Modules\AfisPipeline\Models\AfisTrackerGroup::where('navixy_group_id', $t['group_id'] ?? 0)->exists()
-                            ? ($t['group_id'] ?? null)
-                            : null,
-                            'label'           => $t['label'] ?? 'Unknown',
-                            'model_name'      => $t['source']['model'] ?? null,
-                            'imei'            => $imei,
-                            'is_active'       => true,
-                            'online_status'   => ($t['status']['identification'] ?? '') === 'active' ? 'online' : 'offline',
-                            'last_synced_at'  => now(),
-                        ]
-                    );
-                }
-            }
+        // Validate group exists and belongs to this client
+        $groupRecord = AfisTrackerGroup::where('navixy_group_id', $groupId)
+            ->where('client_id', $client->id)
+            ->where('navixy_instance', $instance)
+            ->first();
+
+        if (!$groupRecord) continue;
+
+        $imei         = $t['source']['device_id'] ?? null;
+        $validGroupId = $groupId;
+
+        $existingTracker = AfisTracker::where('navixy_tracker_id', $t['id'])->first();
+
+        if ($existingTracker) {
+            // Only update label/status — NEVER change client_id
+            $existingTracker->update([
+                'navixy_group_id' => $validGroupId,
+                'label'           => $t['label'] ?? 'Unknown',
+                'model_name'      => $t['source']['model'] ?? null,
+                'imei'            => $imei,
+                'is_active'       => true,
+                'online_status'   => ($t['status']['identification'] ?? '') === 'active' ? 'online' : 'offline',
+                'last_synced_at'  => now(),
+            ]);
+        } else {
+            // Only create with client_id on first discovery
+            AfisTracker::create([
+                'navixy_tracker_id' => $t['id'],
+                'client_id'         => $client->id,
+                'navixy_group_id'   => $validGroupId,
+                'label'             => $t['label'] ?? 'Unknown',
+                'model_name'        => $t['source']['model'] ?? null,
+                'imei'              => $imei,
+                'is_active'         => true,
+                'online_status'     => ($t['status']['identification'] ?? '') === 'active' ? 'online' : 'offline',
+                'last_synced_at'    => now(),
+            ]);
+        }
+    }
+}
 
             // ── Step 2: Get all known trackers for this client ────────────────
             $knownTrackers = AfisTracker::where('client_id', $client->id)->get();
