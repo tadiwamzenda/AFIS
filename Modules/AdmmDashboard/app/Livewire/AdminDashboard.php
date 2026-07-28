@@ -4,58 +4,57 @@ namespace Modules\AdmmDashboard\Livewire;
 
 use Carbon\Carbon;
 use Livewire\Component;
-use Modules\AdmmInventory\Models\Accessory;
+use Modules\AdmmInventory\Models\AssetRecord;
 use Modules\AdmmInventory\Models\Client;
-use Modules\AdmmInventory\Models\GpsDevice;
-use Modules\AdmmInventory\Models\SimCard;
 use Modules\AuditLog\Models\AuditLog;
 
 class AdminDashboard extends Component
 {
     public function render()
     {
-        $thirtyDays = Carbon::now()->addDays(30);
+        // ── Clients ───────────────────────────────────────────────────────────
+        $totalClients  = Client::where('is_active', true)
+            ->where('id', '!=', 21) // exclude MISCELLANEOUS
+            ->count();
 
-        return view('admmdashboard::livewire.dashboard', [
+        // ── Devices from Asset Register ───────────────────────────────────────
+        $totalDevices       = AssetRecord::count();
+        $devicesWithClient  = AssetRecord::where('location', 'CLIENT')->count();
+        $devicesInStock     = AssetRecord::where('location', 'STOCK')->count();
+        $devicesLost        = AssetRecord::where('location', 'LOST')->count();
 
-            // ── Counts ───────────────────────────────────────────────────────
-            'totalClients'      => Client::where('is_active', true)->count(),
-            'totalSimCards'     => SimCard::count(),
-            'totalGpsDevices'   => GpsDevice::count(),
-            'totalAccessories'  => Accessory::count(),
+        // ── SIM cards from Asset Register ─────────────────────────────────────
+        $simQuery           = AssetRecord::whereNotNull('sim_card_phone_no')
+                                ->where('sim_card_phone_no', '!=', '');
+        $totalSims          = (clone $simQuery)->count();
+        $simsWithClient     = (clone $simQuery)->where('location', 'CLIENT')->count();
+        $simsInStock        = (clone $simQuery)->where('location', 'STOCK')->count();
+        $simsLost           = (clone $simQuery)->where('location', 'LOST')->count();
 
-            // ── SIM card breakdown ───────────────────────────────────────────
-            'simClientAssigned' => SimCard::where('location_context', 'client_assigned')->count(),
-            'simInternalStock'  => SimCard::where('location_context', 'internal_stock')->count(),
-            'simUnallocated'    => SimCard::where('location_context', 'unallocated')->count(),
+        // ── Fleet summary ─────────────────────────────────────────────────────
+        $totalTrackers  = \Modules\AfisPipeline\Models\AfisTracker::where('client_id', '!=', 21)->count();
+        $activeClients  = \Modules\AfisPipeline\Models\AfisTracker::where('client_id', '!=', 21)
+            ->distinct('client_id')->count('client_id');
 
-            // ── GPS device breakdown ─────────────────────────────────────────
-            'devicesInstalled'  => GpsDevice::where('status', 'installed_client')->count(),
-            'devicesInStock'    => GpsDevice::where('status', 'in_office_stock')->count(),
-            'devicesRepair'     => GpsDevice::where('status', 'under_repair')->count(),
+        // ── Recent installations (last 10 added to asset register) ───────────
+        $recentInstallations = AssetRecord::whereNotNull('installation_date')
+            ->orderByDesc('installation_date')
+            ->limit(5)
+            ->get();
 
-            // ── Alerts ───────────────────────────────────────────────────────
-            'simRenewalsDue'    => SimCard::whereNotNull('bundle_renewal_date')
-                ->where('bundle_renewal_date', '<=', $thirtyDays)
-                ->where('status', '!=', 'deactivated')
-                ->with('client')
-                ->orderBy('bundle_renewal_date')
-                ->limit(10)
-                ->get(),
+        // ── Recent activity (audit log) ───────────────────────────────────────
+        $recentActivity = AuditLog::with('user')
+            ->latest()
+            ->limit(10)
+            ->get();
 
-            'warrantyExpiring'  => collect(),
-
-            'lostAssets' => [
-                'sim_cards'   => SimCard::where('status', 'lost')->count(),
-                'gps_devices' => GpsDevice::where('status', 'lost_stolen')->count(),
-                'accessories' => Accessory::where('status', 'lost')->count(),
-            ],
-
-            // ── Recent activity ──────────────────────────────────────────────
-            'recentActivity'    => AuditLog::with('user')
-                ->latest('created_at')
-                ->limit(15)
-                ->get(),
-        ]);
+        return view('admmdashboard::livewire.dashboard', compact(
+            'totalClients',
+            'totalDevices', 'devicesWithClient', 'devicesInStock', 'devicesLost',
+            'totalSims', 'simsWithClient', 'simsInStock', 'simsLost',
+            'totalTrackers',
+            'recentInstallations',
+            'recentActivity',
+        ));
     }
 }
