@@ -49,26 +49,30 @@ class AfisNotification extends Model
         return $query->where('severity', $severity);
     }
 
-    public function isUnread(): bool
-    {
-        return is_null($this->read_at);
-    }
-
     public function getSeverityColorAttribute(): string
     {
         return match($this->severity) {
-            'warning'  => 'bg-yellow-100 text-yellow-700 border-yellow-200',
-            'critical' => 'bg-red-100 text-red-700 border-red-200',
-            default    => 'bg-blue-100 text-blue-700 border-blue-200',
+            'critical' => 'border-red-200 bg-red-50 text-red-700',
+            'severe'   => 'border-orange-200 bg-orange-50 text-orange-700',
+            'warning'  => 'border-yellow-200 bg-yellow-50 text-yellow-700',
+            default    => 'border-blue-200 bg-blue-50 text-blue-700',
         };
     }
+
+    
 
     public function getSeverityIconAttribute(): string
     {
         return match($this->severity) {
-            'warning'  => '⚠',
             'critical' => '🔴',
-            default    => 'ℹ',
+            'severe'   => '🟠',
+            'warning'  => '🟡',
+            default    => '🔵',
         };
+    }
+
+    public function isUnread(): bool
+    {
+        return $this->read_at === null;
     }
 }

@@ -2,5 +2,5 @@
 @section('title', 'Notifications')
 @section('page-title', 'Notifications')
 @section('content')
-    <livewire:afis-notification-centre />
+    <livewire:notifications-centre />
 @endsection

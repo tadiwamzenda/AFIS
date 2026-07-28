@@ -18,13 +18,13 @@ class NotificationsServiceProvider extends ServiceProvider
         $this->loadMigrationsFrom(module_path($this->moduleName, 'database/migrations'));
         $this->commands([CheckAlertsCommand::class]);
 
-        // Run alert checks daily at 8am
+        // Run alert checks every 30 minutes
         $this->callAfterResolving(Schedule::class, function (Schedule $schedule) {
-            $schedule->command('afis:check-alerts')->dailyAt('08:00');
+            $schedule->command('afis:check-alerts')->everyThirtyMinutes();
         });
 
-        \Livewire\Livewire::component('afis-notification-centre', \Modules\Notifications\Livewire\NotificationCentre::class);
-        \Livewire\Livewire::component('afis-notification-bell',   \Modules\Notifications\Livewire\NotificationBell::class);
+        \Livewire\Livewire::component('afis-notification-bell', \Modules\Notifications\Livewire\NotificationBell::class);
+        \Livewire\Livewire::component('notifications-centre', \Modules\Notifications\Livewire\NotificationCentre::class);
     }
 
     public function register(): void

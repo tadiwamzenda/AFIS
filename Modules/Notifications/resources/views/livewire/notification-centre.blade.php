@@ -7,12 +7,13 @@
                 <option value="">All severities</option>
                 <option value="info">Info</option>
                 <option value="warning">Warning</option>
+                <option value="severe">Severe</option>
                 <option value="critical">Critical</option>
             </select>
-            <select wire:model.live="moduleFilter" class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
-                <option value="">All modules</option>
-                @foreach($modules as $module)
-                    <option value="{{ $module }}">{{ $module }}</option>
+            <select wire:model.live="clientFilter" class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
+                <option value="">All clients</option>
+                @foreach($clients as $client)
+                    <option value="{{ $client }}">{{ $client }}</option>
                 @endforeach
             </select>
             <label class="flex items-center gap-2 cursor-pointer">
@@ -35,7 +36,8 @@
             <div class="flex-shrink-0 mt-0.5">
                 <span class="inline-flex items-center justify-center w-8 h-8 rounded-full text-sm
                     {{ $notification->severity === 'critical' ? 'bg-red-100' :
-                       ($notification->severity === 'warning' ? 'bg-yellow-100' : 'bg-blue-100') }}">
+                    ($notification->severity === 'severe' ? 'bg-orange-100' :
+                    ($notification->severity === 'warning' ? 'bg-yellow-100' : 'bg-blue-100')) }}">
                     {{ $notification->severity_icon }}
                 </span>
             </div>

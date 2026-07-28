@@ -5,4 +5,6 @@ use Modules\Notifications\Http\Controllers\NotificationController;
 
 Route::middleware('auth')->prefix('admin')->name('admin.')->group(function () {
     Route::get('/notifications', [NotificationController::class, 'index'])->name('notifications.index');
+    Route::post('/notifications/{id}/read', [NotificationController::class, 'markRead'])->name('notifications.read');
+    Route::post('/notifications/read-all', [NotificationController::class, 'markAllRead'])->name('notifications.read-all');
 });
