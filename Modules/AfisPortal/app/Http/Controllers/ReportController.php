@@ -16,52 +16,71 @@ class ReportController extends Controller
 {
     public function __construct(private ReportDataService $reportData) {}
 
-    public function standardReport(Request $request)
-    {
-        $client  = Client::findOrFail($request->clientId);
-        $from    = Carbon::parse($request->from)->startOfDay();
-        $to      = Carbon::parse($request->to)->endOfDay();
-        $groupId = $request->groupId ?: null;
+public function standardReport(Request $request)
+{
+    set_time_limit(0);
+    ini_set('memory_limit', '2048M');
+    ini_set('max_execution_time', '0');
 
-        $data = $this->reportData->buildReportData($client, $from, $to, $groupId);
+    $client         = Client::findOrFail($request->clientId);
+    $from           = Carbon::parse($request->from)->startOfDay();
+    $to             = Carbon::parse($request->to)->endOfDay();
+    $selectedGroups = $request->selectedGroups
+        ? array_filter(array_map('intval', (array) $request->selectedGroups))
+        : [];
+
+    $trackerCount = \Modules\AfisPipeline\Models\AfisTracker::where('client_id', $client->id)
+        ->when(!empty($selectedGroups), fn($q) => $q->whereIn('navixy_group_id', $selectedGroups))
+        ->count();
+
+$isConsolidated = $trackerCount > 200;
+    if ($isConsolidated) {
+        // Use consolidated report service
+        $consolidatedService = app(\Modules\AfisPortal\Services\ConsolidatedReportService::class);
+        $pdfContent = $consolidatedService->generate($client, $from, $to, $selectedGroups);
+    } else {
+        $data = $this->reportData->buildReportData($client, $from, $to, $selectedGroups);
         if (isset($data['error'])) return back()->withErrors(['report' => $data['error']]);
 
-        $pdf = Pdf::loadView('afisportal::reports.standard', $data)
+        $pdfContent = Pdf::loadView('afisportal::reports.standard', $data)
             ->setPaper('a4', 'landscape')
-            ->setOptions(['defaultFont' => 'sans-serif', 'isHtml5ParserEnabled' => true, 'isRemoteEnabled' => false]);
-
-        $filename  = strtolower(str_replace(' ', '-', $client->name)) . '-standard-' . $from->format('Y-m-d') . '-to-' . $to->format('Y-m-d') . '.pdf';
-        $filePath  = 'reports/' . $filename;
-        $pdfContent = $pdf->output();
-
-        Storage::disk('local')->put($filePath, $pdfContent);
-
-        AfisGeneratedReport::create([
-            'client_id'       => $client->id,
-            'generated_by'    => Auth::id(),
-            'report_type'     => 'standard',
-            'from_date'       => $from->toDateString(),
-            'to_date'         => $to->toDateString(),
-            'navixy_group_id' => $groupId,
-            'filename'        => $filename,
-            'file_path'       => $filePath,
-            'file_size'       => strlen($pdfContent),
-        ]);
-
-        return response($pdfContent)
-            ->header('Content-Type', 'application/pdf')
-            ->header('Content-Disposition', "attachment; filename=\"{$filename}\"");
+            ->setOptions(['defaultFont' => 'sans-serif', 'isHtml5ParserEnabled' => true, 'isRemoteEnabled' => false])
+            ->output();
     }
+
+    $filename = strtolower(str_replace(' ', '-', $client->name))
+        . ($isConsolidated ? '-consolidated-' : '-standard-')
+        . $from->format('Y-m-d') . '-to-' . $to->format('Y-m-d') . '.pdf';
+    $filePath = 'reports/' . $filename;
+
+    Storage::disk('local')->put($filePath, $pdfContent);
+
+    AfisGeneratedReport::create([
+        'client_id'    => $client->id,
+        'generated_by' => Auth::id(),
+        'report_type'  => 'standard',
+        'from_date'    => $from->toDateString(),
+        'to_date'      => $to->toDateString(),
+        'filename'     => $filename,
+        'file_path'    => $filePath,
+        'file_size'    => strlen($pdfContent),
+    ]);
+
+    return response($pdfContent)
+        ->header('Content-Type', 'application/pdf')
+        ->header('Content-Disposition', "attachment; filename=\"{$filename}\"");
+}
 
     public function aiReport(Request $request)
     {
         $client  = Client::findOrFail($request->clientId);
         $from    = Carbon::parse($request->from)->startOfDay();
         $to      = Carbon::parse($request->to)->endOfDay();
-        $groupId = $request->groupId ?: null;
+$selectedGroups = $request->selectedGroups
+    ? array_filter(array_map('intval', (array) $request->selectedGroups))
+    : [];
 
-        $data = $this->reportData->buildReportData($client, $from, $to, $groupId);
-        if (isset($data['error'])) return back()->withErrors(['report' => $data['error']]);
+$data = $this->reportData->buildReportData($client, $from, $to, $selectedGroups);        if (isset($data['error'])) return back()->withErrors(['report' => $data['error']]);
 
         $promptBuilder  = app(\Modules\AfisEngine\Services\Prompts\PromptBuilder::class);
         $engine         = app(\Modules\AfisEngine\Services\AfisEngineService::class);
@@ -91,7 +110,6 @@ class ReportController extends Controller
             'report_type'     => 'ai',
             'from_date'       => $from->toDateString(),
             'to_date'         => $to->toDateString(),
-            'navixy_group_id' => $groupId,
             'filename'        => $filename,
             'file_path'       => $filePath,
             'file_size'       => strlen($pdfContent),
@@ -129,10 +147,11 @@ class ReportController extends Controller
 
         $from    = Carbon::parse($request->from ?? now()->startOfMonth())->startOfDay();
         $to      = Carbon::parse($request->to   ?? now()->endOfMonth())->endOfDay();
-        $groupId = $request->groupId ?: null;
+$selectedGroups = $request->selectedGroups
+    ? array_filter(array_map('intval', (array) $request->selectedGroups))
+    : [];
 
-        $data = $this->reportData->buildReportData($client, $from, $to, $groupId);
-        if (isset($data['error'])) return back()->withErrors(['report' => $data['error']]);
+$data = $this->reportData->buildReportData($client, $from, $to, $selectedGroups);        if (isset($data['error'])) return back()->withErrors(['report' => $data['error']]);
 
         $pdf = Pdf::loadView('afisportal::reports.standard', $data)
             ->setPaper('a4', 'landscape')
@@ -153,7 +172,6 @@ class ReportController extends Controller
             'report_type'     => 'standard',
             'from_date'       => $from->toDateString(),
             'to_date'         => $to->toDateString(),
-            'navixy_group_id' => $groupId,
             'filename'        => $filename,
             'file_path'       => $filePath,
             'file_size'       => strlen($pdfContent),
@@ -170,10 +188,11 @@ class ReportController extends Controller
 
         $from    = Carbon::parse($request->from ?? now()->startOfMonth())->startOfDay();
         $to      = Carbon::parse($request->to   ?? now()->endOfMonth())->endOfDay();
-        $groupId = $request->groupId ?: null;
+$selectedGroups = $request->selectedGroups
+    ? array_filter(array_map('intval', (array) $request->selectedGroups))
+    : [];
 
-        $data = $this->reportData->buildReportData($client, $from, $to, $groupId);
-        if (isset($data['error'])) return back()->withErrors(['report' => $data['error']]);
+$data = $this->reportData->buildReportData($client, $from, $to, $selectedGroups);        if (isset($data['error'])) return back()->withErrors(['report' => $data['error']]);
 
         $promptBuilder = app(\Modules\AfisEngine\Services\Prompts\PromptBuilder::class);
         $engine        = app(\Modules\AfisEngine\Services\AfisEngineService::class);
@@ -206,7 +225,6 @@ class ReportController extends Controller
             'report_type'     => 'ai',
             'from_date'       => $from->toDateString(),
             'to_date'         => $to->toDateString(),
-            'navixy_group_id' => $groupId,
             'filename'        => $filename,
             'file_path'       => $filePath,
             'file_size'       => strlen($pdfContent),

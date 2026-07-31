@@ -12,6 +12,7 @@ class AfisPortalServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->registerViews();
+        $this->app->singleton(\Modules\AfisPortal\Services\ConsolidatedReportService::class);
 
         \Livewire\Livewire::component('afis-fleet-overview',         \Modules\AfisPortal\Livewire\FleetOverview::class);
         \Livewire\Livewire::component('afis-client-fleet-dashboard', \Modules\AfisPortal\Livewire\ClientFleetDashboard::class);

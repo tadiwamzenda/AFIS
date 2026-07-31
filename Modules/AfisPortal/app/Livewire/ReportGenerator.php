@@ -10,14 +10,77 @@ use Modules\AfisPortal\Services\ReportDataService;
 
 class ReportGenerator extends Component
 {
-    public ?int    $clientId   = null;
-    public ?int    $groupId    = null;
-    public string  $period     = 'monthly';
-    public string  $fromDate   = '';
-    public string  $toDate     = '';
-    public string  $month      = '';
-    public string  $error      = '';
-    public bool    $isAdmin    = true;
+    public ?int    $clientId      = null;
+    public array   $selectedGroups = []; // multiple group IDs
+    public string  $period        = 'monthly';
+    public string  $fromDate      = '';
+    public string  $toDate        = '';
+    public string  $month         = '';
+    public string  $error         = '';
+    public bool    $isAdmin       = true;
+    public bool    $largeFleet    = false;
+
+    public function updatedClientId(): void
+    {
+        $this->selectedGroups = [];
+        $trackerCount = \Modules\AfisPipeline\Models\AfisTracker::where('client_id', $this->clientId)->count();
+        $this->largeFleet = $trackerCount > 200;
+    }
+
+    public function toggleGroup(int $groupId): void
+    {
+        if (in_array($groupId, $this->selectedGroups)) {
+            $this->selectedGroups = array_values(array_filter(
+                $this->selectedGroups, fn($id) => $id !== $groupId
+            ));
+        } else {
+            $this->selectedGroups[] = $groupId;
+        }
+    }
+
+    public function selectAllGroups(array $groupIds): void
+    {
+        foreach ($groupIds as $id) {
+            if (!in_array($id, $this->selectedGroups)) {
+                $this->selectedGroups[] = $id;
+            }
+        }
+    }
+
+    public function deselectAllGroups(array $groupIds): void
+    {
+        $this->selectedGroups = array_values(array_filter(
+            $this->selectedGroups, fn($id) => !in_array($id, $groupIds)
+        ));
+    }
+
+    public function toggleParent(string $parent, array $groupIds): void
+    {
+        $allSelected = collect($groupIds)->every(fn($id) => in_array($id, $this->selectedGroups));
+
+        if ($allSelected) {
+            $this->selectedGroups = array_values(array_filter(
+                $this->selectedGroups,
+                fn($id) => !in_array($id, $groupIds)
+            ));
+        } else {
+            foreach ($groupIds as $id) {
+                if (!in_array($id, $this->selectedGroups)) {
+                    $this->selectedGroups[] = $id;
+                }
+            }
+        }
+    }
+
+    private function getParentRegion(string $title): string
+    {
+        $parts = explode(' ', trim($title));
+        // Special case: ZETDC TR → use 3 words (ZETDC TR EAST / ZETDC TR WEST)
+        if (count($parts) >= 3 && strtoupper($parts[0]) === 'ZETDC' && strtoupper($parts[1]) === 'TR') {
+            return implode(' ', array_slice($parts, 0, 3));
+        }
+        return implode(' ', array_slice($parts, 0, 2));
+    }
 
     public function mount(bool $isAdmin = true, ?int $clientId = null): void
     {
@@ -61,19 +124,20 @@ class ReportGenerator extends Component
 
         if ($this->isAdmin) {
             return redirect()->route('admin.afis.reports.standard', [
-                'clientId' => $this->clientId,
-                'from'     => $this->fromDate,
-                'to'       => $this->toDate,
-                'groupId'  => $this->groupId,
+                'clientId'      => $this->clientId,
+                'from'          => $this->fromDate,
+                'to'            => $this->toDate,
+                'selectedGroups'=> $this->selectedGroups,
             ]);
         }
 
         return redirect()->route('client.reports.generate.standard', [
-            'from'    => $this->fromDate,
-            'to'      => $this->toDate,
-            'groupId' => $this->groupId,
+            'from'           => $this->fromDate,
+            'to'             => $this->toDate,
+            'selectedGroups' => $this->selectedGroups,
         ]);
     }
+
 
     public function generateAiReport(): mixed
     {
@@ -84,19 +148,19 @@ class ReportGenerator extends Component
             return null;
         }
 
-        if ($this->isAdmin) {
+      if ($this->isAdmin) {
             return redirect()->route('admin.afis.reports.ai', [
-                'clientId' => $this->clientId,
-                'from'     => $this->fromDate,
-                'to'       => $this->toDate,
-                'groupId'  => $this->groupId,
+                'clientId'       => $this->clientId,
+                'from'           => $this->fromDate,
+                'to'             => $this->toDate,
+                'selectedGroups' => $this->selectedGroups,
             ]);
         }
 
         return redirect()->route('client.reports.generate.ai', [
-            'from'    => $this->fromDate,
-            'to'      => $this->toDate,
-            'groupId' => $this->groupId,
+            'from'           => $this->fromDate,
+            'to'             => $this->toDate,
+            'selectedGroups' => $this->selectedGroups,
         ]);
     }
 
@@ -114,16 +178,37 @@ class ReportGenerator extends Component
             ? Client::active()->orderBy('name')->get()
             : collect();
 
-        $groups = $this->clientId
-        ? AfisTrackerGroup::where('client_id', $this->clientId)->orderBy('title')->get()
-        : collect();
+        $groups       = collect();
+        $parentGroups = collect();
+
+        if ($this->clientId) {
+            $allGroups = AfisTrackerGroup::where('client_id', $this->clientId)
+                ->orderBy('title')
+                ->get();
+
+            if ($this->largeFleet) {
+                // Build parent group map
+                $parentMap = [];
+                foreach ($allGroups as $group) {
+                    $parent = $this->getParentRegion($group->title);
+                    $parentMap[$parent][] = $group->navixy_group_id;
+                }
+                ksort($parentMap);
+                $parentGroups = collect($parentMap);
+            } else {
+                $groups = $allGroups;
+            }
+        }
 
         $recentReports = \Modules\AfisPortal\Models\AfisGeneratedReport::with('client', 'generatedBy')
-            ->where('client_id', $this->clientId)
+            ->when($this->clientId, fn($q) => $q->where('client_id', $this->clientId))
             ->latest()
             ->limit(20)
             ->get();
 
-        return view('afisportal::livewire.report-generator', compact('clients', 'groups', 'recentReports'));
+        return view('afisportal::livewire.report-generator', compact(
+            'clients', 'groups', 'parentGroups', 'recentReports'
+        ));
     }
+
 }

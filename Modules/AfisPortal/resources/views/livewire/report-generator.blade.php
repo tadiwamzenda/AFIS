@@ -21,20 +21,54 @@
                     @endforeach
                 </select>
             </div>
+            @endif
 
-            {{-- Sub-group --}}
-            <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">
-                    Sub-group
-                    <span class="text-xs text-gray-400 font-normal">(optional — leave blank for all)</span>
+           {{-- Sub-group selection --}}
+            @if($clientId && ($groups->isNotEmpty() || $parentGroups->isNotEmpty()))
+            <div class="col-span-2">
+                <label class="block text-sm font-medium text-gray-700 mb-2">
+                    Sub-groups
+                    @if($largeFleet)
+                    <span class="text-xs text-gray-400 font-normal ml-1">(optional — leave blank for all)</span>
+                    @else
+                    <span class="text-xs text-gray-400 font-normal ml-1">(optional — leave blank for all)</span>
+                    @endif
                 </label>
-                <select wire:model="groupId"
-                    class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
-                    <option value="">All groups</option>
+
+                @if($largeFleet)
+                {{-- Parent region checkboxes --}}
+                <div class="border border-gray-200 rounded-lg max-h-64 overflow-y-auto p-3 bg-gray-50">
+                    <div class="grid grid-cols-1 gap-1">
+                        @foreach($parentGroups as $parent => $groupIds)
+                        @php $allSelected = collect($groupIds)->every(fn($id) => in_array($id, $selectedGroups)); @endphp
+                        <label class="flex items-center gap-2 cursor-pointer px-2 py-1.5 rounded hover:bg-white border border-transparent {{ $allSelected ? 'border-brand-200 bg-white' : '' }}">
+                            <input type="checkbox"
+                                wire:click="toggleParent('{{ $parent }}', {{ json_encode($groupIds) }})"
+                                @checked($allSelected)
+                                class="w-3.5 h-3.5 rounded border-gray-300 text-brand-500">
+                            <span class="text-xs text-gray-700 font-medium">{{ $parent }}</span>
+                            <span class="text-xs text-gray-400 ml-auto">{{ count($groupIds) }} sub-groups</span>
+                        </label>
+                        @endforeach
+                    </div>
+                </div>
+                <p class="text-xs text-gray-400 mt-1">
+                    {{ empty($selectedGroups) ? 'All regions — consolidated report' : count(array_unique($selectedGroups)) . ' sub-group(s) selected' }}
+                </p>
+                @else
+                {{-- Simple checkboxes for small fleets --}}
+                <div class="flex flex-wrap gap-2">
                     @foreach($groups as $group)
-                        <option value="{{ $group->navixy_group_id }}">{{ $group->title }}</option>
+                    <label class="flex items-center gap-1.5 cursor-pointer px-2 py-1 border border-gray-200 rounded-lg hover:bg-gray-50">
+                        <input type="checkbox"
+                            wire:click="toggleGroup({{ $group->navixy_group_id }})"
+                            @checked(in_array($group->navixy_group_id, $selectedGroups))
+                            class="w-3.5 h-3.5 rounded border-gray-300 text-brand-500">
+                        <span class="text-xs text-gray-700">{{ $group->title }}</span>
+                    </label>
                     @endforeach
-                </select>
+                </div>
+                @endif
             </div>
             @endif
 
@@ -138,4 +172,3 @@
     @endif
 
 </div>
-
