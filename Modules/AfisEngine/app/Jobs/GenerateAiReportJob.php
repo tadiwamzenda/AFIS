@@ -53,7 +53,7 @@ class GenerateAiReportJob implements ShouldQueue
             default => throw new \InvalidArgumentException("Unknown report type: {$this->reportType}"),
         };
 
-        $engine->generateReport(
+        $aiReport = $engine->generateReport(
             reportType: $this->reportType,
             prompt:     $prompt,
             clientId:   $this->clientId,
@@ -61,6 +61,15 @@ class GenerateAiReportJob implements ShouldQueue
             useCache:   $this->options['use_cache'] ?? true,
         );
 
+        // Link AI report back to incident and mark completed
+        if ($this->reportType === 'incident_analysis' && !empty($this->options['incident_id'])) {
+            \Modules\AfisIncidents\Models\AfisIncident::where('id', $this->options['incident_id'])
+                ->update([
+                    'status'       => 'completed',
+                    'ai_report_id' => $aiReport->id,
+                ]);
+        }
+
         Log::info("GenerateAiReportJob: completed {$this->reportType} for client {$this->clientId}");
-    }
+            }
 }
