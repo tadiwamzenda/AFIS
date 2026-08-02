@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use Illuminate\Support\Facades\Auth;
 use Modules\AdmmInventory\Models\Client;
+use Modules\AfisIncidents\Models\AfisIncident;
 
 class IncidentController extends Controller
 {
@@ -27,6 +28,17 @@ class IncidentController extends Controller
     {
         $clients = \Modules\AdmmInventory\Models\Client::active()->orderBy('name')->get();
         return view('afisincidents::admin.index', compact('clients'));
+    }
+    
+    public function adminDownload(AfisIncident $incident)
+    {
+        abort_unless($incident->report_path, 404);
+        abort_unless(\Illuminate\Support\Facades\Storage::disk('local')->exists($incident->report_path), 404);
+
+        return \Illuminate\Support\Facades\Storage::disk('local')->download(
+            $incident->report_path,
+            "Incident_Report_{$incident->vehicle_label}_{$incident->id}.docx"
+        );
     }
 
     // ─── Client portal routes ─────────────────────────────────────────────────

@@ -16,6 +16,8 @@ class AfisIncident extends Model
         'client_id', 'tracker_id', 'navixy_tracker_id', 'vehicle_label',
         'incident_date', 'description', 'severity', 'status',
         'ai_report_id', 'logged_by',
+        'report_path', 'prepared_by_name', 'prepared_by_title',
+        'reviewed_by_name', 'reviewed_by_title',
     ];
 
     protected $casts = [

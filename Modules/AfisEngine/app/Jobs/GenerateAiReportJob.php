@@ -12,7 +12,7 @@ use Modules\AfisEngine\Services\AfisEngineService;
 use Modules\AfisEngine\Services\Prompts\PromptBuilder;
 use Modules\AfisPipeline\Models\AfisTracker;
 use Modules\AdmmInventory\Models\Client;
-
+use Modules\AfisIncidents\Services\IncidentReportDocxBuilder;
 class GenerateAiReportJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
@@ -44,7 +44,10 @@ class GenerateAiReportJob implements ShouldQueue
             'incident_analysis' => $promptBuilder->incidentAnalysis(
                 $tracker,
                 $this->options['incident_description'] ?? '',
-                $this->options['incident_date'] ?? now()->toDateString()
+                $this->options['incident_date'] ?? now()->toDateString(),
+                $this->options['trip_report_text'] ?? null,
+                $this->options['speed_report_text'] ?? null,
+                $this->options['events_report_text'] ?? null,
             ),
             'predictive_intelligence' => $promptBuilder->predictiveIntelligence(
                 $client,
@@ -61,15 +64,34 @@ class GenerateAiReportJob implements ShouldQueue
             useCache:   $this->options['use_cache'] ?? true,
         );
 
-        // Link AI report back to incident and mark completed
+        // Link AI report back to incident, build the docx, and mark completed
         if ($this->reportType === 'incident_analysis' && !empty($this->options['incident_id'])) {
-            \Modules\AfisIncidents\Models\AfisIncident::where('id', $this->options['incident_id'])
-                ->update([
-                    'status'       => 'completed',
-                    'ai_report_id' => $aiReport->id,
-                ]);
-        }
+            $incident = \Modules\AfisIncidents\Models\AfisIncident::find($this->options['incident_id']);
 
+            if ($incident) {
+                try {
+                    $reportPath = app(IncidentReportDocxBuilder::class)
+                        ->build($incident, $aiReport->response, $tracker);
+
+                    $incident->update([
+                        'status'       => 'completed',
+                        'ai_report_id' => $aiReport->id,
+                        'report_path'  => $reportPath,
+                    ]);
+                } catch (\Throwable $e) {
+                    // AI analysis still succeeded even if the docx export failed —
+                    // don't mark the incident as failed for a formatting problem.
+                    Log::error('GenerateAiReportJob: docx build failed', [
+                        'incident_id' => $incident->id,
+                        'error'       => $e->getMessage(),
+                    ]);
+                    $incident->update([
+                        'status'       => 'completed',
+                        'ai_report_id' => $aiReport->id,
+                    ]);
+                }
+            }
+        }
         Log::info("GenerateAiReportJob: completed {$this->reportType} for client {$this->clientId}");
             }
 }

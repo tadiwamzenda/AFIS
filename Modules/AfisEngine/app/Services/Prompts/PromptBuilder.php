@@ -339,9 +339,16 @@ Base predictions strictly on the trend data provided. Distinguish clearly betwee
 PROMPT;
     }
 
-    // ─── Incident Analysis ────────────────────────────────────────────────────
+  // ─── Incident Analysis ────────────────────────────────────────────────────
 
-    public function incidentAnalysis(AfisTracker $tracker, string $incidentDescription, string $incidentDate): string
+    public function incidentAnalysis(
+        AfisTracker $tracker,
+        string  $incidentDescription,
+        string  $incidentDate,
+        ?string $tripReportText   = null,
+        ?string $speedReportText  = null,
+        ?string $eventsReportText = null,
+    ): string
     {
         $incidentCarbon = Carbon::parse($incidentDate);
         $dayBefore      = $incidentCarbon->copy()->subDay();
@@ -362,62 +369,73 @@ PROMPT;
             $t->max_speed_kmh > $this->speedLimitKmh ? ' ⚠ SPEEDING' : ''
         ))->implode("\n");
 
-        $tripsOnDay = $tripsAround->filter(fn($t) =>
-            Carbon::parse($t->start_time)->toDateString() === $incidentCarbon->toDateString()
-        );
+        if ($tripLog === '') {
+            $tripLog = 'No AFIS GPS trip records found in the 24 hours surrounding this incident.';
+        }
 
-        $maxSpeedOnDay = round($tripsOnDay->max('max_speed_kmh'), 0);
-        $totalKmOnDay  = round($tripsOnDay->sum('distance_km'), 1);
-        $tripsOnDayCount = $tripsOnDay->count();
+        $navixySections = '';
+        if ($tripReportText) {
+            $navixySections .= "\n### Navixy Trip Report (raw extract)\n" . $this->truncateForPrompt($tripReportText) . "\n";
+        }
+        if ($speedReportText) {
+            $navixySections .= "\n### Navixy Speed Violation Report (raw extract)\n" . $this->truncateForPrompt($speedReportText) . "\n";
+        }
+        if ($eventsReportText) {
+            $navixySections .= "\n### Navixy Events Report (raw extract)\n" . $this->truncateForPrompt($eventsReportText) . "\n";
+        }
+        if ($navixySections === '') {
+            $navixySections = "No Navixy PDF reports were uploaded for this incident. Base the chronology and location strictly on the AFIS GPS trip log and the incident description — do not invent addresses or event names.";
+        }
+
+        $chronologyDate = $incidentCarbon->format('d.m.Y');
 
         return <<<PROMPT
 You are a fleet incident analyst for Bantu Track, a GPS tracking company in Zimbabwe.
 
-Analyse the GPS tracking data surrounding this incident and produce a structured incident analysis report.
+Produce a SHORT, PRECISE incident analysis report — maximum 2 pages when printed. No padding, no academic language, no restating the same point twice, no filler.
 
 ## Vehicle: {$tracker->label}
 ## Client: {$tracker->client?->name}
 ## Incident date: {$incidentDate}
-## Incident description: {$incidentDescription}
+## Incident description (as logged by the reporting user): {$incidentDescription}
 
-## GPS DATA AROUND INCIDENT (±24 hours)
-
-### Vehicle activity on incident day
-- Trips: {$tripsOnDayCount}
-- Total distance: {$totalKmOnDay} km
-- Maximum speed recorded: {$maxSpeedOnDay} km/h
-
-### Full trip log (48 hours around incident)
+## AFIS GPS TRIP LOG (±24 hours around incident)
 {$tripLog}
 
-## REPORT SECTIONS REQUIRED
+## NAVIXY REPORT DATA (authoritative for exact addresses, timestamps and event names — prefer this over the AFIS trip log when building the chronology table)
+{$navixySections}
 
-### 1. INCIDENT SUMMARY
-Concise description of the incident based on the description provided and GPS context.
+## OUTPUT FORMAT — FOLLOW EXACTLY, OUTPUT NOTHING ELSE
 
-### 2. VEHICLE ACTIVITY TIMELINE
-Reconstruct what the vehicle was doing in the 24 hours before the incident. What trips were made? What speeds were recorded?
+On the very first line, output only:
+LOCATION: <the specific street/area name where the incident occurred, taken from the Navixy data if available, otherwise the best available location from the GPS data>
 
-### 3. GPS EVIDENCE ANALYSIS
-What does the GPS data tell us about this incident? Is there evidence of speeding, unusual hours of operation, or abnormal driving patterns on the incident day?
+Then produce exactly these 5 sections, in this order, using these exact Markdown headers:
 
-### 4. CONTRIBUTING FACTORS
-Based on the GPS data, what factors may have contributed to this incident? Be specific to what the data shows.
+## 1. EXECUTIVE SUMMARY
+2-3 sentences maximum. What happened, in plain terms.
 
-### 5. SEVERITY ASSESSMENT
-Rate severity as: MINOR / MODERATE / SERIOUS / CRITICAL — with justification.
+## 2. CHRONOLOGY OF EVENTS {$chronologyDate}
+A Markdown table with exactly these columns: Time | Event | Details
+Only include rows supported by the Navixy data or GPS trip log — do not invent events. Times in 24-hour HH:MM format.
 
-### 6. DATA GAPS
-What information is NOT available in the GPS data that would be needed for a full investigation?
+## 3. ANALYSIS AND KEY FINDINGS
+Use numbered sub-headings like "### 3.1 [Finding name]", "### 3.2 [Finding name]" etc. Only include findings actually supported by the data — do not pad with generic findings. Usually 2-4 findings is right; never invent one just to fill space.
 
-### 7. RECOMMENDATIONS
-4-5 specific actions arising from this incident. Include both immediate actions and longer-term preventive measures.
+## 4. CONCLUSION
+2-3 sentences maximum stating what the evidence shows.
 
-### 8. CONCLUSION
-Brief conclusion and recommended follow-up.
-
-Base all analysis strictly on the GPS data provided. Clearly distinguish between what the data confirms and what is inferred.
+Do not include a "RECOMMENDATIONS" section — that is a fixed, standard section appended automatically by the system, not generated by you. Do not include a title, do not include "Prepared By" or "Reviewed By" lines, do not include a date header block — those are also added separately by the system. Output only the LOCATION line followed by the 4 sections above, nothing before or after.
 PROMPT;
+    }
+
+    private function truncateForPrompt(string $text, int $maxChars = 6000): string
+    {
+        $text = trim($text);
+        if (mb_strlen($text) <= $maxChars) {
+            return $text;
+        }
+        return mb_substr($text, 0, $maxChars) . "\n...[truncated]";
     }
 
     // ─── Helpers ─────────────────────────────────────────────────────────────

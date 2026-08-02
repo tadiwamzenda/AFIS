@@ -26,6 +26,12 @@
                                                                'bg-gray-100 text-gray-600')) }}">
                         {{ ucfirst($selected->status) }}
                     </span>
+                    @if($selected->report_path)
+                        <a href="{{ route('admin.afis.incidents.download', $selected->id) }}"
+                            class="text-xs font-medium px-2 py-0.5 rounded-full bg-brand-50 text-brand-700 hover:bg-brand-100 transition-colors">
+                            ⬇ Download .docx
+                        </a>
+                    @endif
                 </div>
             </div>
 
@@ -110,6 +116,13 @@
                             {{ ucfirst($incident->status) }}
                         </span>
                         <p class="text-xs text-brand-600 mt-1">View report →</p>
+                        @if($incident->report_path)
+                            <a href="{{ route('admin.afis.incidents.download', $incident->id) }}"
+                                onclick="event.stopPropagation()"
+                                class="text-xs text-gray-500 hover:text-brand-600 mt-0.5 block">
+                                ⬇ .docx
+                            </a>
+                        @endif
                     </div>
                 </div>
             </div>
