@@ -5,6 +5,7 @@ namespace Modules\AfisPortal\Http\Controllers;
 use App\Http\Controllers\Controller;
 use Carbon\Carbon;
 use Barryvdh\DomPDF\Facade\Pdf;
+use League\CommonMark\GithubFlavoredMarkdownConverter;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
@@ -92,7 +93,8 @@ $data = $this->reportData->buildReportData($client, $from, $to, $selectedGroups)
             $aiResponse = 'AI analysis unavailable: ' . $e->getMessage();
         }
 
-        $data['ai_analysis'] = $aiResponse;
+        $data['ai_analysis']      = $aiResponse;
+        $data['ai_analysis_html'] = (new GithubFlavoredMarkdownConverter())->convert($aiResponse)->getContent();
 
         $pdf = Pdf::loadView('afisportal::reports.ai-report', $data)
             ->setPaper('a4', 'portrait')
@@ -204,7 +206,8 @@ $data = $this->reportData->buildReportData($client, $from, $to, $selectedGroups)
             $aiResponse = 'AI analysis unavailable: ' . $e->getMessage();
         }
 
-        $data['ai_analysis'] = $aiResponse;
+        $data['ai_analysis']      = $aiResponse;
+        $data['ai_analysis_html'] = (new GithubFlavoredMarkdownConverter())->convert($aiResponse)->getContent();
 
         $pdf = Pdf::loadView('afisportal::reports.ai-report', $data)
             ->setPaper('a4', 'portrait')

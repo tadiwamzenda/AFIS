@@ -4,6 +4,7 @@ namespace Modules\AfisPortal\Services;
 
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Modules\AdmmInventory\Models\Client;
 use Modules\AfisPipeline\Models\AfisTracker;
 use Modules\AfisPipeline\Models\AfisTrackerGroup;
@@ -354,25 +355,68 @@ class ReportDataService
             })
             ->toArray();
 
+                // ── Previous-period trend comparison ──────────────────────────────────
+        $periodDays   = $from->diffInDays($to) + 1;
+        $previousFrom = $from->copy()->subDays($periodDays)->startOfDay();
+        $previousTo   = $from->copy()->subDay()->endOfDay();
+
+        $previousMileage = (float) AfisMileageDaily::whereIn('tracker_id', $trackerIds)
+            ->whereBetween('date', [$previousFrom->toDateString(), $previousTo->toDateString()])
+            ->sum('mileage_km');
+
+        $mileageTrendPct = $previousMileage > 0
+            ? round((($totalMileage - $previousMileage) / $previousMileage) * 100, 1)
+            : 0;
+
+        // ── Offline count — same MAX(id)-subquery pattern as FleetStateDashboard ──
+        $offlineCount = DB::table('afis_device_alerts')
+            ->whereIn('tracker_id', $trackerIds)
+            ->whereIn('event_type', ['online', 'offline'])
+            ->whereIn('id', function ($sub) use ($trackerIds) {
+                $sub->selectRaw('MAX(id)')
+                    ->from('afis_device_alerts')
+                    ->whereIn('tracker_id', $trackerIds)
+                    ->whereIn('event_type', ['online', 'offline'])
+                    ->groupBy('tracker_id');
+            })
+            ->where('event_type', 'offline')
+            ->count();
+
+        // ── Critical alerts from afis_notifications ─────────────────────────────
+        // Defensive: a 'severity' column on afis_notifications hasn't been
+        // confirmed in this codebase — degrades to 0 instead of throwing if absent.
+        $criticalAlerts = 0;
+        if (Schema::hasTable('afis_notifications') && Schema::hasColumn('afis_notifications', 'severity')) {
+            $criticalAlerts = DB::table('afis_notifications')
+                ->whereIn(DB::raw("JSON_UNQUOTE(JSON_EXTRACT(data, '$.tracker_id'))"), $trackerIds)
+                ->where('created_at', '>=', $from)
+                ->whereIn('severity', ['critical', 'severe'])
+                ->count();
+        }
+
         return [
-            'client'          => $client,
-            'from'            => $from,
-            'to'              => $to,
-            'fleet_size'      => $trackers->count(),
-            'total_mileage'   => round($totalMileage, 2),
-            'weekend_km'      => round($weekendKm, 2),
-            'after_hrs_km'    => round($afterHrsKm, 2),
-            'vehicles'        => $vehicles,
-            'speeding'        => $speedingSummary,
-            'speeding_detail' => $speedingDetail,
-            'weekend'         => $weekendSummary,
-            'after_hours'     => $afterHrsSummary,
-            'fuel'            => $fuelSummary,
-            'fuel_flat'       => $fuelFlat,
-            'groups'          => $groupBreakdown,
-            'weekend_dates'   => $weekendDates,
-            'speed_limit'     => $this->speedLimit,
-            'generated_at'    => Carbon::now(),
+            'client'            => $client,
+            'from'              => $from,
+            'to'                => $to,
+            'fleet_size'        => $trackers->count(),
+            'total_mileage'     => round($totalMileage, 2),
+            'weekend_km'        => round($weekendKm, 2),
+            'after_hrs_km'      => round($afterHrsKm, 2),
+            'vehicles'          => $vehicles,
+            'speeding'          => $speedingSummary,
+            'speeding_detail'   => $speedingDetail,
+            'weekend'           => $weekendSummary,
+            'after_hours'       => $afterHrsSummary,
+            'fuel'              => $fuelSummary,
+            'fuel_flat'         => $fuelFlat,
+            'groups'            => $groupBreakdown,
+            'weekend_dates'     => $weekendDates,
+            'speed_limit'       => $this->speedLimit,
+            'generated_at'      => Carbon::now(),
+            'previous_mileage'  => round($previousMileage, 2),
+            'mileage_trend_pct' => $mileageTrendPct,
+            'offline_count'     => $offlineCount,
+            'critical_alerts'   => $criticalAlerts,
         ];
     }
 
