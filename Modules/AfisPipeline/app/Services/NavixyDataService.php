@@ -71,6 +71,7 @@ class NavixyDataService
         }
     }
 
+    
     public function getEvents(int $trackerId, Carbon $from, Carbon $to, int $instance = 1): array
     {
         try {
@@ -220,31 +221,61 @@ class NavixyDataService
     // ─── Alerts / notification history ───────────────────────────────────────
 
     public function getAlerts(array $trackerIds, Carbon $from, Carbon $to, int $instance = 1): array
-    {
-        if (empty($trackerIds)) return [];
+{
+    if (empty($trackerIds)) return [];
 
-        try {
-            $hash     = $this->auth->getHash($instance);
-            $response = Http::timeout(60)
-                ->withHeaders(['Content-Type' => 'application/json'])
-                ->post("{$this->baseUrl}/history/tracker/list", [
-                    'hash'     => $hash,
-                    'trackers' => $trackerIds,
-                    'from'     => $from->format('Y-m-d H:i:s'),
-                    'to'       => $to->format('Y-m-d H:i:s'),
-                ]);
+    $allAlerts = [];
 
-            $data = $response->json();
-            if (empty($data['success'])) {
-                Log::warning("NavixyDataService: alerts list failed", ['response' => $data]);
-                return [];
-            }
-            return $data['list'] ?? [];
-        } catch (\Throwable $e) {
-            Log::warning("NavixyDataService: getAlerts failed", ['error' => $e->getMessage()]);
-            return [];
-        }
+    foreach (array_chunk($trackerIds, 50) as $chunk) {
+        $alerts = $this->fetchAlertsChunk($chunk, $from, $to, $instance);
+        $allAlerts = array_merge($allAlerts, $alerts);
+        usleep(300000);
     }
+
+    return $allAlerts;
+}
+
+private function fetchAlertsChunk(array $trackerIds, Carbon $from, Carbon $to, int $instance, int $depth = 0): array
+{
+    if (empty($trackerIds) || $depth > 7) return [];
+
+    try {
+        $hash     = $this->auth->getHash($instance);
+        $response = Http::timeout(60)
+            ->withHeaders(['Content-Type' => 'application/json'])
+            ->post("{$this->baseUrl}/history/tracker/list", [
+                'hash'     => $hash,
+                'trackers' => $trackerIds,
+                'from'     => $from->format('Y-m-d H:i:s'),
+                'to'       => $to->format('Y-m-d H:i:s'),
+            ]);
+
+        $data = $response->json();
+
+        if (!empty($data['success'])) {
+            return $data['list'] ?? [];
+        }
+
+        // Code 217 = nonexistent entity — split and retry each half
+        if (($data['status']['code'] ?? 0) === 217 && count($trackerIds) > 1) {
+            $mid   = (int) ceil(count($trackerIds) / 2);
+            $left  = array_slice($trackerIds, 0, $mid);
+            $right = array_slice($trackerIds, $mid);
+
+            $leftAlerts  = $this->fetchAlertsChunk($left,  $from, $to, $instance, $depth + 1);
+            $rightAlerts = $this->fetchAlertsChunk($right, $from, $to, $instance, $depth + 1);
+
+            return array_merge($leftAlerts, $rightAlerts);
+        }
+
+        Log::warning("NavixyDataService: alerts list failed", ['response' => $data]);
+        return [];
+
+    } catch (\Throwable $e) {
+        Log::warning("NavixyDataService: getAlerts failed", ['error' => $e->getMessage()]);
+        return [];
+    }
+}
 
     // ─── All trackers (online AND offline) ───────────────────────────────────
 
@@ -254,7 +285,37 @@ class NavixyDataService
         $data = $this->post('tracker/list', [], $instance);
         return $data['list'] ?? [];
     }
+    // ─── (Tracker State)) ──────────────────────────────────
+    public function getTrackerStates(array $navixyTrackerIds, int $instance = 1): array
+    {
+        if (empty($navixyTrackerIds)) return [];
 
+        $allStates = [];
+
+        foreach (array_chunk($navixyTrackerIds, 1000) as $chunk) {
+            try {
+                $hash     = $this->auth->getHash($instance);
+                $response = Http::timeout(60)
+                    ->withHeaders(['Content-Type' => 'application/json'])
+                    ->post("{$this->baseUrl}/tracker/get_states", [
+                        'hash'            => $hash,
+                        'trackers'        => $chunk,
+                        'allow_not_exist' => true,
+                        'list_blocked'    => true,
+                    ]);
+
+                $data = $response->json();
+                if (!empty($data['success'])) {
+                    $allStates = $allStates + ($data['states'] ?? []);
+                }
+                usleep(300000);
+            } catch (\Throwable $e) {
+                Log::warning("NavixyDataService: getTrackerStates failed", ['error' => $e->getMessage()]);
+            }
+        }
+
+        return $allStates;
+    }
     // ─── (Engine Hours)) ───────────────────────────────────
 
     public function getEngineHours(array $trackerIds, Carbon $from, Carbon $to, int $instance = 1): array

@@ -39,7 +39,8 @@ $clientGroupIds = AfisTrackerGroup::where('client_id', $client->id)
     ->pluck('navixy_group_id')
     ->toArray();
 
-if (!empty($clientGroupIds)) {
+    $allNavixyTrackers = [];
+    if (!empty($clientGroupIds)) {
     $allNavixyTrackers = $this->navixy->getAllTrackers($instance);
 
     foreach ($allNavixyTrackers as $t) {
@@ -91,6 +92,26 @@ if (!empty($clientGroupIds)) {
 
             // ── Step 2: Get all known trackers for this client ────────────────
             $knownTrackers = AfisTracker::where('client_id', $client->id)->get();
+
+            // ── Step 2b: Update online_status from Navixy get_states (real-time) ──
+            $navixyIds = $knownTrackers->pluck('navixy_tracker_id')->toArray();
+            $states    = $this->navixy->getTrackerStates($navixyIds, $instance);
+
+            // Map navixy_tracker_id → AFIS online_status
+            // active/idle = online, offline/signal_lost/just_registered = offline
+            $statusMap = [];
+            foreach ($states as $navixyId => $state) {
+                $conn = $state['connection_status'] ?? 'offline';
+                $statusMap[(int)$navixyId] = in_array($conn, ['active', 'idle']) ? 'online' : 'offline';
+            }
+
+            foreach ($knownTrackers as $tracker) {
+                $newStatus = $statusMap[$tracker->navixy_tracker_id] ?? 'unknown';
+                if ($newStatus !== $tracker->online_status) {
+                    AfisTracker::where('id', $tracker->id)
+                        ->update(['online_status' => $newStatus]);
+                }
+            }
 
             if ($knownTrackers->isEmpty()) {
                 $log->update([
