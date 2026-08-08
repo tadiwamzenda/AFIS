@@ -194,6 +194,12 @@ class NavixyDataService
     public function getDailyMileage(array $trackerIds, Carbon $from, Carbon $to, int $instance = 1): array
     {
         if (empty($trackerIds)) return [];
+        return $this->fetchMileageChunk($trackerIds, $from, $to, $instance);
+    }
+
+    private function fetchMileageChunk(array $trackerIds, Carbon $from, Carbon $to, int $instance, int $depth = 0): array
+    {
+        if (empty($trackerIds) || $depth > 7) return [];
 
         try {
             $hash     = $this->auth->getHash($instance);
@@ -207,11 +213,26 @@ class NavixyDataService
                 ]);
 
             $data = $response->json();
-            if (empty($data['success'])) {
-                Log::warning("NavixyDataService: mileage read failed", ['response' => $data]);
-                return [];
+
+            if (!empty($data['success'])) {
+                return $data['result'] ?? [];
             }
-            return $data['result'] ?? [];
+
+            // Code 217 = nonexistent entity — split and retry each half
+            if (($data['status']['code'] ?? 0) === 217 && count($trackerIds) > 1) {
+                $mid   = (int) ceil(count($trackerIds) / 2);
+                $left  = array_slice($trackerIds, 0, $mid);
+                $right = array_slice($trackerIds, $mid);
+
+                $leftData  = $this->fetchMileageChunk($left,  $from, $to, $instance, $depth + 1);
+                $rightData = $this->fetchMileageChunk($right, $from, $to, $instance, $depth + 1);
+
+                return $leftData + $rightData;
+            }
+
+            Log::warning("NavixyDataService: mileage read failed", ['response' => $data]);
+            return [];
+
         } catch (\Throwable $e) {
             Log::warning("NavixyDataService: getDailyMileage failed", ['error' => $e->getMessage()]);
             return [];

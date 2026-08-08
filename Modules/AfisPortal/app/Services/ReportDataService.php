@@ -9,7 +9,6 @@ use Modules\AdmmInventory\Models\Client;
 use Modules\AfisPipeline\Models\AfisTracker;
 use Modules\AfisPipeline\Models\AfisTrackerGroup;
 use Modules\AfisPipeline\Models\AfisTrip;
-use Modules\AfisPipeline\Models\AfisMileageDaily;
 use Modules\AfisPipeline\Models\AfisFuelEvent;
 use Modules\AfisPipeline\Models\AfisDeviceAlert;
 use Modules\AfisPipeline\Models\AfisFuelDaily;
@@ -67,13 +66,14 @@ class ReportDataService
         // ── Bulk SQL aggregates (NO full trip load) ───────────────────────────
 
         // 1. Total mileage per tracker
-        $mileageByTracker = AfisMileageDaily::whereIn('tracker_id', $trackerIds)
-            ->whereBetween('date', [$from->toDateString(), $to->toDateString()])
-            ->selectRaw('tracker_id, SUM(mileage_km) as total_mileage')
+        $mileageByTracker = DB::table('afis_trips')
+            ->whereIn('tracker_id', $trackerIds)
+            ->whereBetween('start_time', [$from, $to])
+            ->selectRaw('tracker_id, SUM(distance_km) as total_mileage')
             ->groupBy('tracker_id')
             ->pluck('total_mileage', 'tracker_id');
 
-        // 2. Total mileage for the fleet
+        // 2. Total mileage per fleet
         $totalMileage = $mileageByTracker->sum();
 
         // 3. Groups lookup
@@ -105,10 +105,18 @@ class ReportDataService
             ->pluck('total_km', 'tracker_id');
 
         // 6. Max speed and speeding trips per tracker (SQL)
+        // Speeds > 195 km/h are treated as GPS errors and excluded entirely.
+        // MySQL's MAX() ignores NULLs, so a tracker whose every reading is
+        // >195 gets max_speed = NULL here — it falls out of every
+        // speeding-related list downstream since speeding_trips also lands at 0.
         $speedStats = DB::table('afis_trips')
             ->whereIn('tracker_id', $trackerIds)
             ->whereBetween('start_time', [$from, $to])
-            ->selectRaw('tracker_id, MAX(max_speed_kmh) as max_speed, SUM(CASE WHEN max_speed_kmh > ? THEN 1 ELSE 0 END) as speeding_trips', [$this->speedLimit])
+            ->selectRaw('
+                tracker_id,
+                MAX(CASE WHEN max_speed_kmh BETWEEN ? AND 195 THEN max_speed_kmh ELSE NULL END) as max_speed,
+                SUM(CASE WHEN max_speed_kmh BETWEEN ? AND 195 THEN 1 ELSE 0 END) as speeding_trips
+            ', [$this->speedLimit, $this->speedLimit])
             ->groupBy('tracker_id')
             ->get()
             ->keyBy('tracker_id');
@@ -146,6 +154,18 @@ class ReportDataService
             ->selectRaw('tracker_id, COUNT(*) as total')
             ->groupBy('tracker_id')
             ->pluck('total', 'tracker_id');
+
+        // 9b. Trip-based total mileage per tracker — same source (afis_trips) as
+        // weekend_km, used specifically for the weekend "% of total" calculation
+        // so numerator and denominator never come from two disagreeing pipelines.
+        // (mileage_daily, used for $v['mileage'] elsewhere, can be sparse/lagging
+        // for some trackers, which was producing percentages over 10,000%.)
+        $tripMileageByTracker = DB::table('afis_trips')
+            ->whereIn('tracker_id', $trackerIds)
+            ->whereBetween('start_time', [$from, $to])
+            ->selectRaw('tracker_id, SUM(distance_km) as total_km')
+            ->groupBy('tracker_id')
+            ->pluck('total_km', 'tracker_id');
 
         // 10. Fuel events (bulk)
         $fuelEventsByTracker = AfisFuelEvent::whereIn('tracker_id', $trackerIds)
@@ -225,6 +245,7 @@ class ReportDataService
                 'drain_litres'   => $totalDrain,
                 'consumption'    => $consumption,
                 'trips'          => (int) ($tripCountByTracker[$tracker->id] ?? 0),
+                'trip_mileage'   => round($vMileage, 2), // same source now
                 'weekend_dates'  => $dateTotals,
                 'weekend_total'  => array_sum($dateTotals),
                 'fuel_events'    => ($fuelByTracker->get($tracker->id) ?? collect())
@@ -259,7 +280,7 @@ class ReportDataService
             ->map(function ($v) use ($from, $to) {
                 $worstTrip = AfisTrip::where('tracker_id', $v['id'])
                     ->whereBetween('start_time', [$from, $to])
-                    ->where('max_speed_kmh', '>', $this->speedLimit)
+                    ->whereBetween('max_speed_kmh', [$this->speedLimit, 195]) // exclude GPS errors
                     ->orderByDesc('max_speed_kmh')
                     ->first();
 
@@ -270,13 +291,13 @@ class ReportDataService
                     ->orderByDesc('occurred_at')
                     ->first();
 
-                return [
+                 return [
                     'label'     => $v['label'],
                     'group'     => $v['group'],
                     'top_speed' => $v['max_speed'],
-                    'address'   => $alert?->address ?? ($worstTrip
-                        ? 'Speed recorded on ' . Carbon::parse($worstTrip->start_time)->format('d M Y')
-                        : '—'),
+                    // No fallback guess — if no speedup alert exists (e.g. speed alert rules aren't configured in Navixy for 
+                    //this clientor this is a historical period predating when they were), the address genuinely doesn't exist. 
+                    'address'   => $alert?->address ?? 'Location unavailable, refer to system Speed Violation report',
                     'time'      => $worstTrip
                         ? Carbon::parse($worstTrip->start_time)->format('Y-m-d')
                         : '—',
@@ -289,7 +310,7 @@ class ReportDataService
 
         // ── Weekend summary ───────────────────────────────────────────────────
         $weekendSummary = collect($vehicles)
-            ->filter(fn($v) => $v['weekend_km'] > 0)
+            ->filter(fn($v) => $v['weekend_km'] >= 5)
             ->sortByDesc('weekend_km')
             ->values()
             ->toArray();
@@ -360,9 +381,10 @@ class ReportDataService
         $previousFrom = $from->copy()->subDays($periodDays)->startOfDay();
         $previousTo   = $from->copy()->subDay()->endOfDay();
 
-        $previousMileage = (float) AfisMileageDaily::whereIn('tracker_id', $trackerIds)
-            ->whereBetween('date', [$previousFrom->toDateString(), $previousTo->toDateString()])
-            ->sum('mileage_km');
+        $previousMileage = (float) DB::table('afis_trips')
+            ->whereIn('tracker_id', $trackerIds)
+            ->whereBetween('start_time', [$previousFrom, $previousTo])
+            ->sum('distance_km');
 
         $mileageTrendPct = $previousMileage > 0
             ? round((($totalMileage - $previousMileage) / $previousMileage) * 100, 1)

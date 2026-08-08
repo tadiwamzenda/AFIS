@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: Arial, sans-serif; font-size: 9px; color: #333; margin: 15mm 12mm; }
-    @page { margin: 15mm 12mm; }
+    body { margin: 15mm 12mm; font-family: Arial, sans-serif; font-size: 8px; color: #333; }
+    @page { margin: 15mm 12mm; size: A4 landscape; }
 
     /* Header */
     .report-header { padding: 15px 20px; border-bottom: 2px solid #e5e7eb; }
@@ -25,22 +25,36 @@
     .section-title { font-size: 11px; font-weight: bold; text-align: center; color: #333; margin: 15px 0 8px; text-transform: uppercase; }
 
     /* Tables */
-    table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
-    th { background: #085041; color: white; padding: 5px 6px; font-size: 8px; font-weight: bold; text-align: center; }
-    td { padding: 4px 6px; font-size: 8px; border-bottom: 1px solid #e5e7eb; text-align: center; }
+    table { width: 100%; border-collapse: collapse; table-layout: auto; margin-bottom: 15px; }
+    th {
+        background: #085041; color: white; padding: 4px 6px; font-size: 7px; font-weight: bold;
+        text-align: center; white-space: normal; word-break: break-word;
+        border: 1px solid #e5e7eb;
+    }
+    td { padding: 3px 6px; font-size: 8px; text-align: center; border: 1px solid #e5e7eb; }
     tr:nth-child(even) td { background: #f9fafb; }
     .text-left { text-align: left; }
+    .bold { font-weight: bold; }
     .highlight { background: #fff3cd !important; font-weight: bold; }
     .danger { color: #dc2626; font-weight: bold; }
-    .zero { color: #9ca3af; }
-    .col-yellow  { background: #fef08a; }
-    .col-amber   { background: #fed7aa; }
-    .col-red     { background: #fecaca; }
-    .col-green-1 { background: #bbf7d0; }
-    .col-green-2 { background: #dcfce7; }
 
-    /* Page break */
-    .page-break { page-break-after: always; }
+    /* Exact colors sampled from approved sample images.
+       !important is required: tr:nth-child(even) td has higher specificity
+       than a single class and would otherwise override these on every other row. */
+    .col-yellow  { background: #FFFF00 !important; }
+    .col-amber   { background: #FFA500 !important; }
+    .col-red     { background: #FF0000 !important; }
+    .col-green-1 { background: #94D5B1 !important; }
+    .col-green-2 { background: #D8F2DB !important; }
+
+    /* Each heading+table pair tries to stay together and packs onto whatever
+       page has room — small clients get everything on fewer pages, large
+       tables still flow across pages normally if they're too tall to fit.
+       This is a known soft spot in DomPDF; if a table ever gets stranded
+       or misbehaves, drop .table-group and force page-break-before on each
+       section instead as the simpler, safer fallback. */
+    .table-group { page-break-inside: avoid; }
+    tr { page-break-inside: avoid; }
 
     /* Footer */
     .report-footer { border-top: 1px solid #e5e7eb; padding: 8px 20px; font-size: 7px; color: #9ca3af; text-align: center; margin-top: 15px; }
@@ -66,7 +80,7 @@
             10 Cherry Tree, Avonlea<br>
             Harare, Zimbabwe<br>
             +263 778 002 318 | 0242 702 509<br>
-            operations@bantutrack.com | www.bantutrack.com
+            operations@bantutrack.co.zw | www.bantutrack.com
         </div>
     </div>
 </div>
@@ -114,7 +128,6 @@
         <tr><td class="text-left">Total Mileage (km)</td><td>{{ number_format($total_mileage, 2) }}</td></tr>
         <tr><td class="text-left">Weekends and Holidays (km)</td><td>{{ number_format($weekend_km, 2) }}</td></tr>
         <tr><td class="text-left">After Hours (km)</td><td>{{ number_format($after_hrs_km, 2) }}</td></tr>
-        
     </tbody>
 </table>
 
@@ -159,37 +172,35 @@
 </table>
 @endif
 
-<div class="page-break"></div>
-
-{{-- Page 2: After Hours Breakdown --}}
-<div class="section-title">AFTER HOURS DRIVING (18:00 — 05:59)</div>
-
+{{-- After Hours Breakdown --}}
 @php
 $afterHrsVehicles = array_filter($vehicles, fn($v) => $v['after_hrs_km'] > 0);
 $hourCols = [
-    ['key' => '18:00-18:59', 'label' => '18:00-19:00', 'color' => 'col-yellow'],
-    ['key' => '19:00-19:59', 'label' => '19:00-20:00', 'color' => 'col-yellow'],
-    ['key' => '20:00-20:59', 'label' => '20:00-21:00', 'color' => 'col-amber'],
-    ['key' => '21:00-21:59', 'label' => '21:00-22:00', 'color' => 'col-amber'],
-    ['key' => '22:00-22:59', 'label' => '22:00-23:00', 'color' => 'col-red'],
-    ['key' => '23:00-23:59', 'label' => '23:00-00:00', 'color' => 'col-red'],
-    ['key' => '0:00-0:59',   'label' => '00:00-01:00', 'color' => 'col-red'],
-    ['key' => '1:00-1:59',   'label' => '01:00-02:00', 'color' => 'col-red'],
-    ['key' => '2:00-2:59',   'label' => '02:00-03:00', 'color' => 'col-red'],
-    ['key' => '3:00-3:59',   'label' => '03:00-04:00', 'color' => 'col-red'],
-    ['key' => '4:00-4:59',   'label' => '04:00-05:00', 'color' => 'col-amber'],
-    ['key' => '5:00-5:59',   'label' => '05:00-06:00', 'color' => 'col-yellow'],
+    ['key' => '18:00-18:59', 'label' => '18:00-18:59', 'color' => 'col-yellow'],
+    ['key' => '19:00-19:59', 'label' => '19:00-19:59', 'color' => 'col-yellow'],
+    ['key' => '20:00-20:59', 'label' => '20:00-20:59', 'color' => 'col-amber'],
+    ['key' => '21:00-21:59', 'label' => '21:00-21:59', 'color' => 'col-amber'],
+    ['key' => '22:00-22:59', 'label' => '22:00-22:59', 'color' => 'col-red'],
+    ['key' => '23:00-23:59', 'label' => '23:00-23:59', 'color' => 'col-red'],
+    ['key' => '0:00-0:59',   'label' => '00:00-00:59', 'color' => 'col-red'],
+    ['key' => '1:00-1:59',   'label' => '01:00-01:59', 'color' => 'col-red'],
+    ['key' => '2:00-2:59',   'label' => '02:00-02:59', 'color' => 'col-red'],
+    ['key' => '3:00-3:59',   'label' => '03:00-03:59', 'color' => 'col-red'],
+    ['key' => '4:00-4:59',   'label' => '04:00-04:59', 'color' => 'col-amber'],
+    ['key' => '5:00-5:59',   'label' => '05:00-05:59', 'color' => 'col-yellow'],
 ];
 @endphp
 
 @if(!empty($afterHrsVehicles))
+<div class="table-group">
+<div class="section-title">AFTER HOURS DRIVING (18:00 — 05:59)</div>
 <table>
     <thead>
         <tr>
             <th class="text-left">VEHICLE REG</th>
             <th>LOCATION</th>
             @foreach($hourCols as $col)
-            <th style="width:50px; background:#085041; color:white;">{{ substr($col['label'], 0, 5) }}<br>{{ substr($col['label'], 6) }}</th>
+            <th style="width:50px;">{{ $col['label'] }}</th>
             @endforeach
         </tr>
     </thead>
@@ -200,38 +211,33 @@ $hourCols = [
             <td>{{ $vehicle['group'] }}</td>
             @foreach($hourCols as $col)
             @php $km = round($vehicle['hour_breakdown'][$col['key']] ?? 0); @endphp
-            <td class="{{ $col['color'] }}" style="{{ $km > 0 ? 'font-weight:bold;' : 'color:#aaa;' }}">{{ $km }}</td>
+            <td class="{{ $col['color'] }}" style="{{ $km > 0 ? 'font-weight:bold;' : '' }}">{{ $km }}</td>
             @endforeach
         </tr>
         @endforeach
     </tbody>
 </table>
-@else
-<p style="text-align:center;color:#9ca3af;padding:15px;font-size:8px;">No after hours driving recorded in this period.</p>
+</div>
 @endif
 
-<div class="page-break"></div>
-
-{{-- Page 3: Speeding --}}
-<div class="section-title">SPEEDING INCIDENTS — VEHICLES EXCEEDING {{ $speed_limit }} KM/H</div>
-
+{{-- Speeding --}}
 @if(!empty($speeding_detail))
+<div class="table-group">
+<div class="section-title">SPEEDING INCIDENTS — VEHICLES EXCEEDING {{ $speed_limit }} KM/H</div>
 <table>
     <thead>
         <tr>
-            <th class="text-left">REG NO.</th>
-            <th>LOCATION</th>
-            <th>TOP SPEED</th>
-            <th class="text-left">LOCATION (ADDRESS)</th>
-            <th>TIME</th>
-            <th>FREQUENCY OF SPEEDING</th>
+            <th class="text-left">VEHICLE REG</th>
+            <th>TOP SPEED (KM/H)</th>
+            <th class="text-left">LOCATION</th>
+            <th>DATE</th>
+            <th>FREQUENCY</th>
         </tr>
     </thead>
     <tbody>
         @foreach($speeding_detail as $v)
         <tr>
             <td class="text-left bold">{{ $v['label'] }}</td>
-            <td>{{ $v['group'] }}</td>
             <td class="danger bold">{{ $v['top_speed'] }}</td>
             <td class="text-left" style="font-size:7px;">{{ $v['address'] }}</td>
             <td>{{ $v['time'] }}</td>
@@ -240,29 +246,26 @@ $hourCols = [
         @endforeach
     </tbody>
 </table>
-@else
-<p style="text-align:center; color:#666; padding:10px; font-size:8px;">
-    ✓ No speeding incidents recorded. All vehicles below {{ $speed_limit }} km/h.
-</p>
+</div>
 @endif
 
 {{-- Weekend/Holiday --}}
-<div class="section-title">WEEKENDS AND HOLIDAYS</div>
-
-@php $weekendVehicles = array_filter($vehicles, fn($v) => ($v['weekend_total'] ?? 0) > 0); @endphp
+@php $weekendVehicles = array_filter($vehicles, fn($v) => ($v['weekend_total'] ?? 0) >= 5); @endphp
 
 @if(!empty($weekendVehicles) && !empty($weekend_dates))
+<div class="table-group">
+<div class="section-title">WEEKENDS AND HOLIDAYS</div>
 <table>
     <thead>
         <tr>
             <th class="text-left">VEHICLE ID.</th>
             <th class="text-left">LOCATION</th>
             @foreach($weekend_dates as $date)
-            <th style="background:#085041; color:white;">{{ \Carbon\Carbon::parse($date)->format('Y-m-d') }}</th>
+            <th>{{ \Carbon\Carbon::parse($date)->format('d M Y') }}</th>
             @endforeach
             <th>TOTAL WEEKEND MILEAGE</th>
             <th>TOTAL OVERALL MILEAGE</th>
-            <th>WEEKEND %</th>
+            <th>% OF TOTAL</th>
         </tr>
     </thead>
     <tbody>
@@ -275,25 +278,23 @@ $hourCols = [
                 $km = $v['weekend_dates'][$date] ?? 0;
                 $greenClass = (intdiv($di, 2) % 2 === 0) ? 'col-green-1' : 'col-green-2';
             @endphp
-            <td class="{{ $greenClass }}" style="{{ $km > 0 ? 'font-weight:bold;' : 'color:#aaa;' }}">{{ $km }}</td>
+            <td class="{{ $greenClass }}" style="{{ $km > 0 ? 'font-weight:bold;' : '' }}">{{ $km }}</td>
             @endforeach
             <td class="bold highlight">{{ number_format($v['weekend_total'], 2) }}</td>
-            <td class="bold">{{ number_format($v['mileage'], 2) }}</td>
-            <td class="{{ $v['mileage'] > 0 && ($v['weekend_total']/$v['mileage']) > 0.3 ? 'danger' : '' }}">
-                {{ $v['mileage'] > 0 ? number_format(($v['weekend_total']/$v['mileage'])*100, 1) : '0' }}%
+            <td class="bold">{{ number_format($v['trip_mileage'], 2) }}</td>
+            <td class="{{ $v['trip_mileage'] > 0 && ($v['weekend_total']/$v['trip_mileage']) > 0.3 ? 'danger' : '' }}">
+                {{ $v['trip_mileage'] > 0 ? number_format(($v['weekend_total']/$v['trip_mileage'])*100, 1) : '0' }}%
             </td>
         </tr>
         @endforeach
     </tbody>
 </table>
-@else
-<p style="text-align:center; color:#666; padding:10px; font-size:8px;">No weekend or holiday driving recorded.</p>
+</div>
 @endif
 
 @if(!empty($fuel_flat))
-<div class="page-break"></div>
-
-{{-- Page 4: Fuel Summary --}}
+{{-- Fuel Summary --}}
+<div class="table-group">
 <div class="section-title">FUEL SUMMARY</div>
 
 <table>
@@ -333,6 +334,7 @@ $hourCols = [
         @endforeach
     </tbody>
 </table>
+</div>
 @endif
 
 <div class="report-footer">

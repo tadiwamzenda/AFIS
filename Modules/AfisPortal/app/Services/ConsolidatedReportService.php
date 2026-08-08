@@ -27,8 +27,17 @@ class ConsolidatedReportService
             $client, $from, $to, $selectedGroups
         );
 
-        // ── Step 2: Group vehicles by parent region (first 2 words of group) ──
-        $getParentRegion = fn($title) => implode(' ', array_slice(explode(' ', trim($title)), 0, 2));
+        // ── Step 2: Group vehicles by parent region ────────────────────────────
+        // Same rule as ReportGenerator::getParentRegion() — first 2 words, except
+        // "ZETDC TR" which uses 3 words so TR EAST / TR WEST stay separate regions
+        // (this service previously used a plain 2-word rule and silently merged them).
+        $getParentRegion = function (string $title): string {
+            $parts = explode(' ', trim($title));
+            if (count($parts) >= 3 && strtoupper($parts[0]) === 'ZETDC' && strtoupper($parts[1]) === 'TR') {
+                return implode(' ', array_slice($parts, 0, 3));
+            }
+            return implode(' ', array_slice($parts, 0, 2));
+        };
 
         $vehiclesByParent = collect($summaryData['vehicles'])
             ->groupBy(fn($v) => $getParentRegion($v['group']));
