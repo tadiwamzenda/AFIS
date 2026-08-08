@@ -20,7 +20,7 @@ class NotificationsServiceProvider extends ServiceProvider
 
         // Run alert checks every 30 minutes
         $this->callAfterResolving(Schedule::class, function (Schedule $schedule) {
-            $schedule->command('afis:check-alerts')->everyThirtyMinutes();
+            $schedule->command('afis:check-alerts')->cron('10,40 * * * *');
         });
 
         \Livewire\Livewire::component('afis-notification-bell', \Modules\Notifications\Livewire\NotificationBell::class);
