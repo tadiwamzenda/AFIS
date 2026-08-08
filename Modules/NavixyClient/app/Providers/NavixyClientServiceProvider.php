@@ -20,7 +20,7 @@ class NavixyClientServiceProvider extends ServiceProvider
 
         // Sync users from both Navixy instances every hour
         $this->callAfterResolving(Schedule::class, function (Schedule $schedule) {
-            $schedule->command('navixy:sync-users')->hourly();
+            $schedule->command('navixy:sync-users')->dailyAt('00:30');
         });
     }
 
