@@ -10,6 +10,7 @@ use Modules\AdmmInventory\Models\StockSnapshot;
 use Modules\AfisPipeline\Models\AfisTracker;
 use Modules\AuditLog\Models\AuditLog;
 use Modules\Notifications\Models\AfisNotification;
+use Illuminate\Support\Facades\Cache;
 
 class AdminDashboard extends Component
 {
@@ -72,22 +73,19 @@ class AdminDashboard extends Component
             ])
             ->values();
 
-        // ── 14-day offline vehicle trend (bar chart) ───────────────────────────
-        $offlineTrend = AfisNotification::whereIn('type', [
-                'vehicle.immediately_offline',
-                'vehicle.extended_offline',
-                'vehicle.critically_offline',
-            ])
-            ->where('created_at', '>=', $now->copy()->subDays(13)->startOfDay())
-            ->selectRaw('DATE(created_at) as day, COUNT(DISTINCT data->>"$.tracker_id") as count')
-            ->groupBy('day')
-            ->orderBy('day')
-            ->get()
-            ->map(fn ($row) => [
-                'label' => Carbon::parse($row->day, 'Africa/Harare')->format('D'),
-                'value' => (int) $row->count,
-            ])
-            ->values();
+        // ── 14-day offline vehicle trend (bar chart) ─────────────────────────
+        // Uses daily snapshots taken at 23:55 by admm:snapshot command
+        // Shows end-of-day offline count per day (matches Navixy real-time count)
+        $offlineTrend = collect();
+        for ($i = 13; $i >= 0; $i--) {
+            $date  = $now->copy()->subDays($i)->toDateString();
+            $count = Cache::get('daily_offline_snapshot_' . $date, null);
+            $offlineTrend->push([
+                'label' => Carbon::parse($date, 'Africa/Harare')->format('D'),
+                'value' => $count !== null ? (int) $count : null,
+            ]);
+        }
+        $offlineTrend = $offlineTrend->values();
 
         return view('admmdashboard::livewire.dashboard', compact(
             'totalClients',
