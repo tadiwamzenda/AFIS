@@ -366,7 +366,10 @@ PROMPT;
             $t->distance_km,
             $t->avg_speed_kmh,
             $t->max_speed_kmh,
-            $t->max_speed_kmh > $this->speedLimitKmh ? ' ⚠ SPEEDING' : ''
+            // >=195 km/h is treated as a GPS error fleet-wide (same rule as
+            // Standard/AI reports) — still shown in the raw log for
+            // transparency, but never flagged as genuine speeding evidence.
+            ($t->max_speed_kmh > $this->speedLimitKmh && $t->max_speed_kmh < 195) ? ' ⚠ SPEEDING' : ''
         ))->implode("\n");
 
         if ($tripLog === '') {
@@ -404,6 +407,9 @@ Produce a SHORT, PRECISE incident analysis report — maximum 2 pages when print
 
 ## NAVIXY REPORT DATA (authoritative for exact addresses, timestamps and event names — prefer this over the AFIS trip log when building the chronology table)
 {$navixySections}
+
+## DATA QUALITY RULE — APPLIES TO ALL DATA ABOVE
+Any recorded speed of 195 km/h or above — whether in the AFIS GPS trip log or the Navixy Speed Violation Report text — is a known GPS/sensor error, not a real vehicle speed. Disregard such readings entirely: do not cite them as evidence, do not include them in the chronology table, do not reference them in findings, and do not let them influence your assessment of what happened. Treat the data as if that reading were never recorded.
 
 ## OUTPUT FORMAT — FOLLOW EXACTLY, OUTPUT NOTHING ELSE
 
@@ -548,6 +554,95 @@ TABLE;
 
         return $table;
     }
+
+    /**
+     * Everything in the AI report that must be exact — geographic breakdown
+     * table and the operational recommendations — computed here in PHP
+     * rather than left to the AI, for the same reason the incident report's
+     * Recommendations section was hardcoded: short, templated, policy-style
+     * text drifts in wording when left to a model, and these need to read
+     * identically every time. The AI only narrates Sections 1-4.
+     */
+    public function fleetIntelligenceFixedSections(array $data): array
+    {
+        $scoredVehicles = $this->scoreVehicles($data['vehicles'], $data['speed_limit']);
+        $activeCount    = collect($scoredVehicles)->filter(fn($v) => $v['trips'] > 0)->count();
+        $dormantCount   = max(0, $data['fleet_size'] - $activeCount);
+
+        // Geographic breakdown — parent-region rollup for large fleets so the
+        // pivoted table doesn't end up with dozens of columns. Same 3-word
+        // "ZETDC TR" exception used in ReportGenerator/ConsolidatedReportService.
+        $getParentRegion = function (string $title): string {
+            $parts = explode(' ', trim($title));
+            if (count($parts) >= 3 && strtoupper($parts[0]) === 'ZETDC' && strtoupper($parts[1]) === 'TR') {
+                return implode(' ', array_slice($parts, 0, 3));
+            }
+            return implode(' ', array_slice($parts, 0, 2));
+        };
+
+        if ($data['fleet_size'] > 200) {
+            $geoBreakdown = collect($data['groups'])
+                ->groupBy(fn($g) => $getParentRegion($g['name']))
+                ->map(fn($grp, $parentName) => ['name' => $parentName, 'count' => $grp->sum('count')])
+                ->sortByDesc('count')
+                ->values()
+                ->toArray();
+        } else {
+            $geoBreakdown = collect($data['groups'])->sortByDesc('count')->values()->toArray();
+        }
+
+        // Which alert categories actually apply to this client this period —
+        // only mention categories with real data, per "(if applicable)".
+        $hasSpeeding   = count($data['speeding']) > 0;
+        $hasAfterHours = $data['after_hrs_km'] > 0;
+        $hasFuelDrain  = collect($data['vehicles'])->sum('drain_count') > 0;
+
+        $alertCategories = array_values(array_filter([
+            $hasSpeeding   ? 'speeding' : null,
+            $hasAfterHours ? 'after-hours driving' : null,
+            $hasFuelDrain  ? 'fuel drainage' : null,
+        ]));
+        $alertCategoriesText = match(count($alertCategories)) {
+            0       => 'flagged alerts',
+            1       => $alertCategories[0],
+            default => implode(', ', array_slice($alertCategories, 0, -1)) . ' and ' . end($alertCategories),
+        };
+
+        // Recommendation #3's driver count is specifically the Pre-Incident
+        // Warnings cohort only — the highest-severity tier — not the much
+        // broader "any speeding or after-hours" definition, which for a
+        // large fleet balloons toward fleet size and stops meaning anything.
+        $preIncidentCount = collect($scoredVehicles)
+            ->filter(function ($v) {
+                if ($v['max_speed'] <= 150) return false;
+                foreach ($v['hour_breakdown'] as $slot => $km) {
+                    $hour = (int) explode(':', $slot)[0];
+                    if ($hour >= 0 && $hour <= 5 && $km > 0) return true;
+                }
+                return false;
+            })
+            ->count();
+
+        $coachingThresholdCount = $preIncidentCount;
+
+        $recommendations = [
+            "Resuscitate the {$dormantCount} idle units to improve fleet visibility and utilisation.",
+            "Attend to critical alerts across {$alertCategoriesText}.",
+        ];
+        $recommendations[] = $coachingThresholdCount > 0
+            ? "A structured coaching intervention is recommended for the {$coachingThresholdCount} drivers below the safety threshold."
+            : "No drivers currently fall below the safety threshold — continue routine monitoring.";
+        if ($hasAfterHours) {
+            $recommendations[] = 'After hours need to be monitored to reduce the risk to fleet and operators.';
+        }
+
+        return [
+            'dormant_count'    => $dormantCount,
+            'active_count'     => $activeCount,
+            'geo_breakdown'    => $geoBreakdown,
+            'recommendations'  => $recommendations,
+        ];
+    }
     
     public function fleetIntelligenceFromData(array $data): string
     {
@@ -558,20 +653,13 @@ TABLE;
         $totalKm    = $data['total_mileage'];
         $speedLimit = $data['speed_limit'];
 
-        // ── Precompute every score deterministically in PHP — the AI narrates
-        // these numbers, it does not calculate them. ─────────────────────────
         $scoredVehicles = $this->scoreVehicles($data['vehicles'], $speedLimit);
 
         $activeVehicles = collect($scoredVehicles)->filter(fn($v) => $v['trips'] > 0);
-        $activeCount    = $activeVehicles->count();
-        $inMotionCount  = $activeCount; // period report: "active" and "in motion" both mean had trips this period
+        $activeCount    = $data['active_count']  ?? $activeVehicles->count();
+        $dormantCount   = $data['dormant_count'] ?? max(0, $fleetSize - $activeCount);
+        $inMotionCount  = $activeCount;
         $utilizationPct = $fleetSize > 0 ? round(($activeCount / $fleetSize) * 100, 1) : 0;
-
-        $offlineCount   = $data['offline_count'] ?? 0;
-        $criticalAlerts = ($data['critical_alerts'] ?? 0)
-            + count($data['speeding'])
-            + $offlineCount
-            + collect($data['vehicles'])->sum('drain_count');
 
         $topPerformerOverall = $activeVehicles
             ->filter(fn($v) => $v['speeding_trips'] === 0)
@@ -579,13 +667,23 @@ TABLE;
             ->first();
 
         $fleetSafetyScore = $activeCount > 0 ? (int) round($activeVehicles->avg('safety_score')) : null;
-        $topSafetyVehicle = $activeVehicles->sortByDesc('safety_score')->first();
 
-        $coachingPriorities = collect($scoredVehicles)
+        // Tiebreak by mileage: a 100/100 score only requires zero speeding
+        // and zero after-hours, which many low-mileage/near-dormant vehicles
+        // satisfy trivially. Without this tiebreak, "top score" could pick an
+        // almost-idle vehicle that then never appears in Top Performers
+        // (which is ranked by mileage) — confusing and inconsistent.
+        $topSafetyVehicle = $activeVehicles
+            ->sortBy([['safety_score', 'desc'], ['mileage', 'desc']])
+            ->first();
+
+        // ── Coaching Priorities: true count vs. capped display list ────────
+        $coachingAll     = collect($scoredVehicles)
             ->filter(fn($v) => $v['speeding_trips'] > 0 || $v['after_hrs_km'] > 0)
             ->sortBy('safety_score')
-            ->take(8)
             ->values();
+        $coachingCount   = $coachingAll->count();
+        $coachingDisplay = $coachingAll->take(8);
 
         $topPerformers = collect($scoredVehicles)
             ->filter(fn($v) => $v['speeding_trips'] === 0 && $v['after_hrs_km'] == 0 && $v['mileage'] > 0)
@@ -593,11 +691,13 @@ TABLE;
             ->take(5)
             ->values();
 
-        $highRiskVehicles = collect($scoredVehicles)
-            ->filter(fn($v) => $v['risk_score'] >= 30)
+        // ── High-Risk Vehicles: true count vs. capped display list ─────────
+        $highRiskAll     = collect($scoredVehicles)
+            ->filter(fn($v) => $v['speeding_trips'] > 0 || $v['after_hrs_km'] > 0)
             ->sortByDesc('risk_score')
-            ->take(8)
             ->values();
+        $highRiskCount   = $highRiskAll->count();
+        $highRiskDisplay = $highRiskAll->take(10);
 
         $preIncidentWarnings = collect($scoredVehicles)
             ->filter(function ($v) {
@@ -610,8 +710,15 @@ TABLE;
             })
             ->values();
 
-        $fuelVehicles = collect($data['vehicles'])->filter(fn($v) => $v['fueling_litres'] > 0 && $v['mileage'] > 0);
-        $fuelEconomy  = $fuelVehicles->isNotEmpty()
+        // ── Fuel: only mention the topic at all if this client has any fuel
+        // sensor data (fueling records or drain records) — otherwise "Not
+        // available" / "None detected" reads as if monitoring happened and
+        // found nothing, when actually there's no monitoring at all.
+        $fuelVehicles      = collect($data['vehicles'])->filter(fn($v) => $v['fueling_litres'] > 0 && $v['mileage'] > 0);
+        $hasFuelEconomy    = $fuelVehicles->isNotEmpty();
+        $hasFuelDrainData  = collect($data['vehicles'])->sum('drain_count') > 0;
+        $hasFuelSensorData = $hasFuelEconomy || $hasFuelDrainData;
+        $fuelEconomy       = $hasFuelEconomy
             ? round(($fuelVehicles->sum('fueling_litres') / $fuelVehicles->sum('mileage')) * 100, 2)
             : null;
 
@@ -621,34 +728,28 @@ TABLE;
             ->sortBy('mileage')
             ->values();
 
-        $trendPct   = $data['mileage_trend_pct'] ?? 0;
-        $trendLabel = $trendPct > 0 ? "up {$trendPct}%" : ($trendPct < 0 ? 'down ' . abs($trendPct) . '%' : 'flat');
-
-        // ── Format everything for the prompt ──────────────────────────────────
-        $coachingList = $coachingPriorities->map(fn($v) =>
-            "  - {$v['label']} ({$v['safety_score']}/100) — {$v['speeding_trips']} speeding events, {$v['after_hrs_km']} after-hours km"
+        // ── Format for the prompt ──────────────────────────────────────────
+        $coachingList = $coachingDisplay->map(fn($v) =>
+            "  - {$v['label']} — {$v['speeding_trips']} speeding events, {$v['after_hrs_km']} after-hours km. Recommend coaching."
         )->implode("\n") ?: '  None — no vehicles currently need coaching.';
+        if ($coachingCount > $coachingDisplay->count()) {
+            $coachingList .= "\n  ... and " . ($coachingCount - $coachingDisplay->count()) . ' more vehicles flagged for coaching';
+        }
 
         $topPerformersList = $topPerformers->map(fn($v) =>
-            "  - {$v['label']} ({$v['safety_score']}/100) — {$v['trips']} trips, {$v['mileage']} km, zero speeding/after-hours events"
+            "  - {$v['label']} ({$v['safety_score']}/100) — {$v['mileage']} km, zero speeding/after-hours events"
         )->implode("\n") ?: '  None met the criteria this period.';
 
-        $highRiskList = $highRiskVehicles->map(fn($v) =>
+        $highRiskList = $highRiskDisplay->map(fn($v) =>
             "  - {$v['label']} — risk {$v['risk_score']}/100. Max speed {$v['max_speed']} km/h, {$v['speeding_trips']} speeding trips, {$v['after_hrs_km']} after-hours km."
-        )->implode("\n") ?: '  None — no vehicles scored above the risk threshold.';
+        )->implode("\n") ?: '  None — no vehicles meet the high-risk criteria this period.';
+        if ($highRiskCount > $highRiskDisplay->count()) {
+            $highRiskList .= "\n  ... and " . ($highRiskCount - $highRiskDisplay->count()) . ' more high-risk vehicles';
+        }
 
         $warningsList = $preIncidentWarnings->map(fn($v) =>
             "  - AFIS Warning: {$v['label']} — {$v['max_speed']} km/h recorded with driving activity between midnight and 06:00."
         )->implode("\n") ?: '  None detected this period.';
-
-        $sortedGroups = collect($data['groups'])->sortByDesc('count')->values();
-        $groupList    = $sortedGroups->take(15)->map(fn($g) =>
-            "  - {$g['name']}: {$g['count']} vehicles"
-        )->implode("\n");
-        if ($sortedGroups->count() > 15) {
-            $groupList .= "\n  ... and " . ($sortedGroups->count() - 15) . ' more groups ('
-                . $sortedGroups->slice(15)->sum('count') . ' additional vehicles across smaller sub-groups)';
-        }
 
         $underUtilisedList = $underUtilised->take(15)->map(fn($v) =>
             "  - {$v['label']} — {$v['mileage']} km (fleet active average: " . round($avgMileage, 1) . ' km)'
@@ -656,22 +757,55 @@ TABLE;
         if ($underUtilised->count() > 15) {
             $underUtilisedList .= "\n  ... and " . ($underUtilised->count() - 15) . ' more under-utilised vehicles';
         }
-        $drainList = collect($data['vehicles'])->filter(fn($v) => $v['drain_count'] > 0)->map(fn($v) =>
-            "  - {$v['label']}: {$v['drain_count']} drain event(s), {$v['drain_litres']}L"
-        )->implode("\n") ?: '  None detected this period.';
-
-        $fuelEconomyLine = $fuelEconomy !== null
-            ? "{$fuelEconomy} L/100km (fleet average, from vehicles with fuel sensor data)"
-            : 'Not available — no fuel sensor data recorded for this period.';
 
         $fleetSafetyLine = $fleetSafetyScore !== null
             ? "{$fleetSafetyScore}/100"
             : 'Not available — no active vehicles this period.';
 
+        $efficiencyOpportunityLine = $hasFuelEconomy
+            ? "Redeploying dormant assets would improve utilisation metrics. Addressing the fuel refueling events could recover hundreds of litres of fuel value per month."
+            : "Redeploying dormant assets would improve utilisation metrics.";
+
+        // ── Fuel section of the prompt — entirely conditional ──────────────
+        $fuelPromptBlock = '';
+        $fuelSectionInstruction = 'Do not mention fuel economy or fuel drain events anywhere in this section — this client has no fuel sensor data at all.';
+        if ($hasFuelSensorData) {
+            $fuelEconomyLine = $hasFuelEconomy
+                ? "{$fuelEconomy} L/100km (fleet average, from vehicles with fuel sensor data)"
+                : 'Not available for this period, though this client does have fuel sensors on some vehicles.';
+
+            $refillList = collect($data['vehicles'])
+                ->filter(fn($v) => $v['fueling_litres'] > 0)
+                ->sortByDesc('fueling_litres')
+                ->take(8)
+                ->map(fn($v) => "  - {$v['label']}: {$v['fueling_count']} refuel(s), {$v['fueling_litres']}L")
+                ->implode("\n") ?: '  None detected this period.';
+
+            $fuelPromptBlock = <<<FUEL
+
+**Fuel economy:**
+{$fuelEconomyLine}
+
+**Fuel refuelling events (top 8 by volume):**
+{$refillList}
+FUEL;
+            $fuelSectionInstruction = 'Avg fuel economy: state exactly as given above. If fuel refuelling events are listed above, list them exactly as given under Efficiency Findings, labeled "Fuel Refuelling Events" — do not add any commentary, analysis, or additional sentences about the volumes involved beyond what is already in the Efficiency Opportunity line.';
+        }
+
         return <<<PROMPT
 You are a professional fleet intelligence analyst for Bantu Track, a GPS tracking company in Zimbabwe.
 
-Produce the AI Fleet Intelligence Report using EXACTLY the 5-section structure below. Every number under "COMPUTED DATA" is authoritative and already correctly calculated — use it exactly as given. Do not recompute anything, do not invent numbers not present here. Your job is to narrate and interpret this data professionally, not to do arithmetic.
+Produce Sections 1 through 4 of the AI Fleet Intelligence Report using EXACTLY the structure below. Every number under "COMPUTED DATA" is authoritative — use it exactly as given, do not recompute, do not invent numbers not present here. Narrate and interpret this data professionally; do not do arithmetic yourself.
+
+Do not add any sentence, commentary, or analysis beyond exactly what each bullet point below asks for. Where a bullet says to state a fact or list items, output only that — no extra sentence of interpretation, cost estimate, or warning tacked on afterward, even if it seems like a natural addition. Every part of the report should be traceable to an explicit instruction below.
+
+CRITICAL WORD BANS — apply throughout the entire report, every section:
+- Never use the word "offline". Use "dormant" instead when referring to inactive/non-reporting vehicles.
+- Never suggest immobilisation or driver reassignment as an action, anywhere.
+- Do not editorialise about whether after-hours activity was "authorised", "unaccounted", or suspicious — simply state the after-hours km as a fact, nothing more.
+- Do not include any title, client name, period, or "Prepared by" line anywhere in your output — the system renders those separately. Your output must begin directly with "## SECTION 1 — DAILY FLEET SUMMARY".
+- Do not produce a Section 5 or any recommendations section — that is rendered separately by the system, not by you.
+- Do not produce a "Geographic Breakdown" subsection — that is rendered separately by the system.
 
 ## CLIENT: {$client->name}
 ## PERIOD: {$from} to {$to}
@@ -680,39 +814,29 @@ Produce the AI Fleet Intelligence Report using EXACTLY the 5-section structure b
 
 **Fleet overview:**
 - Fleet size: {$fleetSize}
-- Total distance this period: {$totalKm} km (trend vs previous period: {$trendLabel})
+- Total distance this period: {$totalKm} km
 - Active vehicles (had trips): {$activeCount} / {$fleetSize}
-- Vehicles in motion this period: {$inMotionCount}
+- Dormant vehicles: {$dormantCount}
 - Fleet utilization: {$utilizationPct}%
-- Offline units: {$offlineCount}
-- Critical alerts (speeding + offline + fuel drains): {$criticalAlerts}
 - Top performer (most mileage, zero speeding): {$this->describeVehicle($topPerformerOverall)}
-
-**Geographic / group breakdown:**
-{$groupList}
 
 **Fleet-wide safety score:** {$fleetSafetyLine}
 **Top safety score vehicle:** {$this->describeVehicle($topSafetyVehicle, 'safety_score')}
 
-**Coaching priorities (speeding and/or after-hours vehicles, worst safety score first):**
+**Coaching priorities — {$coachingCount} vehicles total (worst safety score first):**
 {$coachingList}
 
 **Top performers (high mileage, zero speeding, zero after-hours):**
 {$topPerformersList}
 
-**Fuel economy:**
-{$fuelEconomyLine}
-
 **Under-utilised vehicles (mileage below 40% of active fleet average):**
 {$underUtilisedList}
+{$fuelPromptBlock}
 
-**Fuel drain events:**
-{$drainList}
-
-**High-risk vehicles (sorted by risk score):**
+**High-risk vehicles — {$highRiskCount} vehicles total (has speeding and/or after-hours activity; sorted by risk score):**
 {$highRiskList}
 
-**Pre-incident warnings (speed >150 km/h combined with midnight-06:00 activity):**
+**Pre-incident warnings — {$preIncidentWarnings->count()} vehicles total (speed >150 km/h combined with midnight-06:00 activity):**
 {$warningsList}
 
 ## REQUIRED REPORT STRUCTURE — FOLLOW EXACTLY
@@ -720,48 +844,51 @@ Produce the AI Fleet Intelligence Report using EXACTLY the 5-section structure b
 ### SECTION 1 — DAILY FLEET SUMMARY
 - One line: {$client->name} ({$fleetSize}) vehicle fleet
 - One line: {$totalKm} km / {$activeCount} active / {$inMotionCount} in motion
-- Fleet health: one sentence assessment (EXCELLENT / GOOD / NEEDS ATTENTION / POOR) with brief justification
-- Operational Highlights: 4 bullet points covering utilization %, active vs idling split, the named top performer, and the offline unit count
-- AI Observation: 1-2 sentences on the trend vs previous period and any notable pattern
-- Geographic Breakdown: list each group with its vehicle count, from the data above
+- Operational Highlights — exactly 3 bullets, in this order:
+  1. "Fleet utilization stands at {$utilizationPct}%."
+  2. "{$activeCount} vehicles were active this period; {$dormantCount} vehicles were dormant."
+  3. Top performer, named, with its km and zero-speeding note.
+- AI Observation: 1-2 sentences on any notable pattern in the data above.
 
 ### SECTION 2 — DRIVER BEHAVIOUR ANALYSIS
 - Fleet-wide safety score: state exactly as given above
-- Vehicles needing coaching: state the count of vehicles in the Coaching Priorities list above
-- Top score: name the vehicle given above as the top safety score vehicle
-- Coaching Priorities: list each vehicle from the data above, each ending "Recommend coaching."
-- Top Performers: list each vehicle from the data above
+- Vehicles needing coaching: state {$coachingCount} exactly (the true total given above, not just what's listed)
+- Top score: name the vehicle given above as the top safety score vehicle, with its score
+- Coaching Priorities: list each vehicle from the data above EXACTLY in the format given, including the "...and N more" line if present — do not add a score, do not add commentary about authorisation or legitimacy
+- Top Performers: list each vehicle from the data above EXACTLY in the format given — do not mention trip counts
 - Behavioural Pattern: 1-2 sentences inferring when/where harsh driving events cluster, based on the after-hours and speeding data given
 
 ### SECTION 3 — FLEET EFFICIENCY REPORT
 - Fleet utilization: state exactly as given above
-- Avg fuel economy: state exactly as given above (or note it's unavailable if so)
-- Total idle estimate: one sentence inference based on the gap between active and total fleet size — do not invent a specific idle-hours figure not derivable from the data above
-- Efficiency Findings: list the under-utilised vehicles given above as redeployment candidates; list the fuel drain events given above
-- Efficiency Opportunity: 1-2 sentence recommendation based on the patterns above
+- {$fuelSectionInstruction}
+- Total idle estimate: one sentence — vehicles with no trips this period should be described as dormant assets or awaiting maintenance, never "offline"
+- Efficiency Findings: list the under-utilised vehicles given above
+- Efficiency Opportunity: output this exact sentence, word for word, nothing added: "{$efficiencyOpportunityLine}"
 
 ### SECTION 4 — RISK ASSESSMENT
-- Fleet composite risk: LOW / MEDIUM / HIGH / CRITICAL, based on the High-Risk Vehicles count and severity given above
-- High-risk units: state the count from the High-Risk Vehicles list above
-- Pre-incident warnings: state the count from the Pre-Incident Warnings list above
-- High-Risk Vehicles: list each with its risk score and a one-line reason drawn from the data, ending "Review recommended."
-- Pre-Incident Warnings: list each exactly as given above. Do not expand, define, or rename the "AFIS" acronym anywhere in this report — if referenced, it refers only to Bantu Track's Fleet Intelligence System, nothing else. Do not invent an alternate meaning.
-- Predictive Insight: 1-2 sentences on where risk is concentrated and where intervention would have the most leverage
+- Fleet composite risk: LOW / MEDIUM / HIGH / CRITICAL, based on the High-Risk Vehicles list above
+- High-risk units: state {$highRiskCount} exactly (the true total given above, not just what's listed)
+- Pre-incident warnings: state {$preIncidentWarnings->count()} exactly
+- High-Risk Vehicles: list each with its risk score and a one-line reason drawn from the data, ending "Review recommended.", including the "...and N more" line if present
+- Pre-Incident Warnings: list each exactly as given above
+- Predictive Insight: 1-2 sentences on where risk is concentrated. Do not suggest immobilisation or driver reassignment — describe the pattern only.
 
-### SECTION 5 — OPERATIONAL RECOMMENDATIONS
-Produce exactly 4 numbered, prioritised actions ranked by impact-to-effort:
-1. Reconnect the offline units (name the count from the data above) — connectivity or operational issue
-2. Review the critical alerts (name the count from the data above) — speeding, fuel drains, after-hours combined
-3. Schedule coaching for the vehicles below the safety threshold (name the count from Coaching Priorities above)
-4. One additional recommendation you infer directly from the specific patterns in the data above — must reference actual vehicles or groups, not generic advice
-
-End the report with a single line: "FLEET HEALTH VERDICT: " followed by EXCELLENT / GOOD / NEEDS ATTENTION / POOR and a one-sentence justification.
-
-Keep every section concise — bullet points preferred over paragraphs. If a data section above says "None" or "Not available", say so plainly rather than inventing content. Do not repeat the raw data tables — narrate and interpret them.
+Do not repeat the raw data tables — narrate and interpret them. Stop after Section 4.
 PROMPT;
     }
 
-    private function scoreVehicles(array $vehicles, int $speedLimit): array
+    private function describeVehicle(?array $v, string $scoreKey = null): string
+    {
+        if (!$v) return 'None identified this period.';
+
+        if ($scoreKey && isset($v[$scoreKey])) {
+            return "{$v['label']} ({$v[$scoreKey]}/100)";
+        }
+
+        return "{$v['label']} — {$v['mileage']} km, zero speeding events";
+    }
+
+        private function scoreVehicles(array $vehicles, int $speedLimit): array
     {
         return array_map(function ($v) use ($speedLimit) {
             $mileage = max($v['mileage'], 0.01); // avoid div-by-zero for parked vehicles
@@ -779,16 +906,5 @@ PROMPT;
             return $v;
         }, $vehicles);
     }
-
-    private function describeVehicle(?array $v, string $scoreKey = null): string
-    {
-        if (!$v) return 'None identified this period.';
-
-        if ($scoreKey && isset($v[$scoreKey])) {
-            return "{$v['label']} ({$v[$scoreKey]}/100)";
-        }
-
-        return "{$v['label']} — {$v['mileage']} km, zero speeding events";
-    }
-
+    
 }

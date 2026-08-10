@@ -8,9 +8,12 @@
             <div class="flex items-start justify-between gap-4 mb-4">
                 <div>
                     <h3 class="text-base font-semibold text-gray-800">{{ $selected->vehicle_label }}</h3>
-                    <p class="text-sm text-gray-500 mt-0.5">
+                     <p class="text-sm text-gray-500 mt-0.5">
                         {{ $selected->incident_date->format('d M Y H:i') }} ·
                         Logged by {{ $selected->loggedBy?->name ?? 'Unknown' }}
+                        @if($selected->aiReport)
+                            · Generated {{ $selected->aiReport->created_at->diffForHumans() }}
+                        @endif
                     </p>
                 </div>
                 <div class="flex items-center gap-2">
@@ -87,7 +90,12 @@
             </select>
         </div>
 
-        <div class="bg-white rounded-xl border border-gray-200 divide-y divide-gray-50">
+        <div class="bg-white rounded-xl border border-gray-200">
+            <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                <h3 class="text-sm font-semibold text-gray-800">Incident reports</h3>
+                <span class="text-xs text-gray-400">{{ $incidents->total() }} reports</span>
+            </div>
+            <div class="divide-y divide-gray-50">
             @forelse($incidents as $incident)
             <div class="px-5 py-4 hover:bg-gray-50 cursor-pointer transition-colors"
                 wire:click="selectIncident({{ $incident->id }})">
@@ -104,10 +112,13 @@
                         <p class="text-xs text-gray-400 mb-1">
                             {{ $incident->incident_date->format('d M Y H:i') }} ·
                             Logged by {{ $incident->loggedBy?->name ?? 'Unknown' }}
+                            @if($incident->aiReport)
+                                · Generated {{ $incident->aiReport->created_at->diffForHumans() }}
+                            @endif
                         </p>
                         <p class="text-sm text-gray-600 truncate">{{ Str::limit($incident->description, 100) }}</p>
                     </div>
-                    <div class="flex-shrink-0 text-right">
+                    <div class="flex-shrink-0 flex items-center gap-2">
                         <span class="text-xs font-medium px-2 py-0.5 rounded-full
                             {{ $incident->status === 'completed' ? 'bg-green-100 text-green-700' :
                                ($incident->status === 'analysing' ? 'bg-blue-100 text-blue-700' :
@@ -115,20 +126,27 @@
                                                                    'bg-gray-100 text-gray-600')) }}">
                             {{ ucfirst($incident->status) }}
                         </span>
-                        <p class="text-xs text-brand-600 mt-1">View report →</p>
                         @if($incident->report_path)
-                            <a href="{{ route('admin.afis.incidents.download', $incident->id) }}"
-                                onclick="event.stopPropagation()"
-                                class="text-xs text-gray-500 hover:text-brand-600 mt-0.5 block">
-                                ⬇ .docx
-                            </a>
+                        <a href="{{ route('admin.afis.incidents.download', $incident->id) }}"
+                            onclick="event.stopPropagation()"
+                            class="inline-flex items-center gap-1 text-xs text-brand-600 hover:text-brand-700 font-medium px-3 py-1.5 border border-brand-200 rounded-lg hover:bg-brand-50 transition-colors">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                            Download
+                        </a>
                         @endif
+                        <button wire:click="deleteIncident({{ $incident->id }})"
+                            wire:confirm="Delete this incident? This cannot be undone."
+                            onclick="event.stopPropagation()"
+                            class="text-xs text-red-500 hover:text-red-700 font-medium px-3 py-1.5 border border-red-200 rounded-lg hover:bg-red-50 transition-colors">
+                            Delete
+                        </button>
                     </div>
                 </div>
             </div>
             @empty
             <p class="px-5 py-10 text-sm text-gray-400 text-center">No incidents logged yet.</p>
             @endforelse
+            </div>
         </div>
 
         @if($incidents->hasPages())

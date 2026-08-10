@@ -217,13 +217,23 @@ class ReportDataService
                 $dateTotals[$date] = (int) round((float) $trackerWeekendTrips->get($date, 0));
             }
 
-            // Fuel events
-            $trackerFuelEvents = $fuelEventsByTracker->get($tracker->id, collect());
-            $fuelingEvents     = $trackerFuelEvents->where('event_type', 'fueling');
-            $drainEvents       = $trackerFuelEvents->where('event_type', 'drain');
+            // Fuel events — refuelling figures sourced from AfisFuelDaily
+            // (same trusted source as fuel_flat / Standard Report's Fuel
+            // Summary table), NOT AfisFuelEvent, which was found to overcount
+            // refuels by ~3-9x for at least one vehicle (confirmed against
+            // both the Standard Report and the client's own Navixy figures).
+            // Drain figures still come from AfisFuelEvent below and likely
+            // carry the same bug — not yet fixed, pending verification.
+            $trackerFuelDaily = $fuelByTracker->get($tracker->id, collect());
+            $fuelingDays      = $trackerFuelDaily->filter(fn($f) => $f->refuel_count > 0);
 
-            $totalFueling = round($fuelingEvents->sum('volume_litres'), 2);
-            $totalDrain   = round($drainEvents->sum('volume_litres'), 2);
+            $totalFuelingCount = (int) $fuelingDays->sum('refuel_count');
+            $totalFueling      = round((float) $fuelingDays->sum('volume_litres'), 2);
+
+            $trackerFuelEvents = $fuelEventsByTracker->get($tracker->id, collect());
+            $drainEvents       = $trackerFuelEvents->where('event_type', 'drain');
+            $totalDrain        = round($drainEvents->sum('volume_litres'), 2);
+
             $consumption  = $vMileage > 0 && $totalFueling > 0
                 ? round(($totalFueling / $vMileage) * 100, 4)
                 : null;
@@ -239,7 +249,7 @@ class ReportDataService
                 'max_speed'      => round($vMaxSpeed, 0),
                 'speeding_trips' => $vSpeeding,
                 'hour_breakdown' => $hourBreakdown,
-                'fueling_count'  => $fuelingEvents->count(),
+                'fueling_count'  => $totalFuelingCount,
                 'fueling_litres' => $totalFueling,
                 'drain_count'    => $drainEvents->count(),
                 'drain_litres'   => $totalDrain,

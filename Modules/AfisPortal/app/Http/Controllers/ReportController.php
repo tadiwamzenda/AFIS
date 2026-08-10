@@ -83,9 +83,16 @@ $selectedGroups = $request->selectedGroups
 
 $data = $this->reportData->buildReportData($client, $from, $to, $selectedGroups);        if (isset($data['error'])) return back()->withErrors(['report' => $data['error']]);
 
-        $promptBuilder  = app(\Modules\AfisEngine\Services\Prompts\PromptBuilder::class);
-        $engine         = app(\Modules\AfisEngine\Services\AfisEngineService::class);
-        $prompt         = $promptBuilder->fleetIntelligenceFromData($data);
+        $promptBuilder = app(\Modules\AfisEngine\Services\Prompts\PromptBuilder::class);
+        $engine        = app(\Modules\AfisEngine\Services\AfisEngineService::class);
+
+        // Fixed (non-AI) sections computed first so the AI prompt can
+        // reference the exact same dormant_count/active_count — one source
+        // of truth, no risk of the two disagreeing.
+        $fixed = $promptBuilder->fleetIntelligenceFixedSections($data);
+        $data  = array_merge($data, $fixed);
+
+        $prompt = $promptBuilder->fleetIntelligenceFromData($data);
 
         try {
             $aiResponse = $engine->analyze($prompt);
@@ -198,7 +205,14 @@ $data = $this->reportData->buildReportData($client, $from, $to, $selectedGroups)
 
         $promptBuilder = app(\Modules\AfisEngine\Services\Prompts\PromptBuilder::class);
         $engine        = app(\Modules\AfisEngine\Services\AfisEngineService::class);
-        $prompt        = $promptBuilder->fleetIntelligenceFromData($data);
+
+        // Fixed (non-AI) sections computed first so the AI prompt can
+        // reference the exact same dormant_count/active_count — one source
+        // of truth, no risk of the two disagreeing.
+        $fixed = $promptBuilder->fleetIntelligenceFixedSections($data);
+        $data  = array_merge($data, $fixed);
+
+        $prompt = $promptBuilder->fleetIntelligenceFromData($data);
 
         try {
             $aiResponse = $engine->analyze($prompt);

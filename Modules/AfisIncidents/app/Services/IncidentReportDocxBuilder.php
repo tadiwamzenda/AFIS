@@ -28,10 +28,12 @@ class IncidentReportDocxBuilder
             'marginRight'  => 1000,
         ]);
 
-        $this->addLetterhead($phpWord, $section);
+        $this->addLetterhead($phpWord, $section, $incident);
 
-        // ── Title ────────────────────────────────────────────────────────
-        $section->addText('INCIDENT ANALYSIS REPORT', ['bold' => true, 'size' => 14, 'color' => '663701']);        $section->addTextBreak(1);
+        // ── Client name + Title ─────────────────────────────────────────
+        $section->addText($this->xmlSafe($incident->client?->name ?? '—'), ['bold' => true, 'size' => 14, 'color' => '085041']);
+        $section->addText('INCIDENT ANALYSIS REPORT', ['bold' => true, 'size' => 14, 'color' => '663701']);
+        $section->addTextBreak(1);
 
         // ── Header block ─────────────────────────────────────────────────
         $this->addLabeledLine($section, 'Date of Incident:', $incident->incident_date->format('d F Y'));
@@ -41,30 +43,30 @@ class IncidentReportDocxBuilder
         $this->addLabeledLine($section, 'Report Date:', now()->format('d F Y'));
         $section->addTextBreak(1);
 
-        // ── Sections 1-5 ─────────────────────────────────────────────────
+        // ── Sections 1-4 ─────────────────────────────────────────────────
         foreach ($sections as $sec) {
-            $section->addText($sec['heading'], ['bold' => true, 'size' => 11]);
+            $section->addText($this->xmlSafe($sec['heading']), ['bold' => true, 'size' => 11]);
 
             if ($sec['type'] === 'table' && !empty($sec['rows'])) {
                 $this->addChronologyTable($section, $sec['rows']);
             } elseif ($sec['type'] === 'subsections') {
                 foreach ($sec['subsections'] as $sub) {
-                    $section->addText($sub['heading'], ['bold' => true, 'italic' => true, 'size' => 10]);
-                    $section->addText($sub['body']);
+                    $section->addText($this->xmlSafe($sub['heading']), ['bold' => true, 'italic' => true, 'size' => 10]);
+                    $section->addText($this->xmlSafe($sub['body']));
                     $section->addTextBreak(1);
                 }
             } elseif ($sec['type'] === 'numbered_list') {
                 foreach ($sec['items'] as $i => $item) {
-                    $section->addText(($i + 1) . '. ' . $item);
+                    $section->addText(($i + 1) . '. ' . $this->xmlSafe($item));
                 }
             } else {
-                $section->addText($sec['body']);
+                $section->addText($this->xmlSafe($sec['body']));
             }
 
             $section->addTextBreak(1);
         }
 
-         // ── Recommendations (fixed policy text — never AI-generated) ─────
+        // ── Recommendations (fixed policy text — never AI-generated) ─────
         $section->addText('5. RECOMMENDATIONS', ['bold' => true, 'size' => 11]);
         $section->addText('1. Retraining: All drivers should undergo retraining on speed limit compliance and defensive driving techniques.');
         $section->addText('2. Policy Review: Review and enforce stricter penalties for speeding violations and unsanctioned trips.');
@@ -73,12 +75,12 @@ class IncidentReportDocxBuilder
         // ── Signature block ─────────────────────────────────────────────
         $section->addText(str_repeat('_', 50));
         $section->addText(
-            'Prepared By: ' . ($incident->prepared_by_name ?: '—') .
-            ' | ' . ($incident->prepared_by_title ?: '—')
+            'Prepared By: ' . $this->xmlSafe($incident->prepared_by_name ?: '—') .
+            ' | ' . $this->xmlSafe($incident->prepared_by_title ?: '—')
         );
         $section->addText(
-            'Reviewed By: ' . ($incident->reviewed_by_name ?: '—') .
-            ' | ' . ($incident->reviewed_by_title ?: '—')
+            'Reviewed By: ' . $this->xmlSafe($incident->reviewed_by_name ?: '—') .
+            ' | ' . $this->xmlSafe($incident->reviewed_by_title ?: '—')
         );
 
         // ── Save to storage/app/incidents ────────────────────────────────
@@ -94,77 +96,53 @@ class IncidentReportDocxBuilder
     }
 
     /**
-     * Adds the Bantu Track header (logo + contact block + rule), footer
-     * (brand graphic), and a faded logo watermark centered on every page.
-     * Assets live in Modules/AfisIncidents/resources/branding/ and are
-     * committed to git — not user-generated, so they don't belong in storage/.
+     * Adds the Bantu Track header (logo image, far left + plain-text
+     * contact details, far right, right-aligned + rule) and footer (brand
+     * graphic). No watermark. Assets live in
+     * Modules/AfisIncidents/resources/branding/ and are committed to git —
+     * not user-generated, so they don't belong in storage/.
      */
-    private function addLetterhead(PhpWord $phpWord, $section): void
+    private function addLetterhead(PhpWord $phpWord, $section, AfisIncident $incident): void
     {
         $brandingPath = base_path('Modules/AfisIncidents/resources/branding');
-        $logoPath      = $brandingPath . '/logo-header.png';
-        $watermarkPath = $brandingPath . '/watermark-faded.png';
-        $footerPath    = $brandingPath . '/footer.png';
+        $logoPath     = $brandingPath . '/logo-header.png';
+        $footerPath   = $brandingPath . '/footer.png';
 
-        // ── Header: logo (left) + contact block (right) + rule ──────────
         $header = $section->addHeader();
 
-        $table = $header->addTable(['cellMargin' => 0]);
+        $table = $header->addTable(['cellMargin' => 0, 'alignment' => Jc::START]);
         $table->addRow();
 
         $logoCell = $table->addCell(5500, ['valign' => 'center']);
         if (file_exists($logoPath)) {
-            // Source is 4098x1398 (~2.93:1) — scaled to keep that ratio.
-            $logoCell->addImage($logoPath, ['width' => 210, 'height' => 71.7]);
+            $logoCell->addImage($logoPath, ['width' => 210, 'height' => 71.7, 'alignment' => Jc::START]);
         }
 
-       $contactCell = $table->addCell(4000, ['valign' => 'center']);
-        $contactStyle = ['size' => 12, 'color' => '444444'];
-        $rightAlign    = [
-            'alignment'   => Jc::START,
+        $contactCell = $table->addCell(4000, ['valign' => 'center']);
+        $contactStyle = ['size' => 8, 'color' => '444444'];
+        $rightAlign   = [
+            'alignment'   => Jc::END,
             'spaceBefore' => 0,
             'spaceAfter'  => 0,
             'lineHeight'  => 1,
         ];
-        $iconStyle    = ['width' => 16, 'height' => 16];
+        $contactCell->addText('+263 242 702 509', $contactStyle, $rightAlign);
+        $contactCell->addText('+263 778 002 318', $contactStyle, $rightAlign);
+        $contactCell->addText('operations@bantutrack.co.zw', $contactStyle, $rightAlign);
+        $contactCell->addText('10 Cherry Tree, Avonlea, Harare', $contactStyle, $rightAlign);
 
-        $this->addContactLine($contactCell, $brandingPath . '/icon-phone.png', '+263242702509 | +263778002318', $contactStyle, $rightAlign, $iconStyle);
-        $this->addContactLine($contactCell, $brandingPath . '/icon-envelope.png', 'operations@bantutrack.co.zw', $contactStyle, $rightAlign, $iconStyle);
-        $this->addContactLine($contactCell, $brandingPath . '/icon-pin.png', '10 Cherry Tree, Avonlea, Harare', $contactStyle, $rightAlign, $iconStyle);
-
-        // Horizontal rule under the header block
         $header->addText('', [], [
             'borderBottomSize'  => 6,
             'borderBottomColor' => '663701',
             'spaceAfter'        => 0,
         ]);
 
-        // ── Watermark: faded logo, centered on every page, behind text ──
-        // Uses position constants (posHorizontal/posVertical => 'center',
-        // relative to the page) instead of manually computed marginLeft/
-        // marginTop offsets — letting Word do the centering math itself
-        // rather than assuming a specific paper size/unit interpretation,
-        // which is what caused the previous version to render off-center.
-        if (file_exists($watermarkPath)) {
-            $header->addWatermark($watermarkPath, [
-                'width'            => 260,
-                'height'           => 256,
-                'positioning'      => 'absolute',
-                'posHorizontalRel' => 'page',
-                'posHorizontal'    => 'center',
-                'posVerticalRel'   => 'page',
-                'posVertical'      => 'center',
-            ]);
-        }
-
-        // ── Footer: brand graphic, centered ──────────────────────────────
         $footer = $section->addFooter();
         if (file_exists($footerPath)) {
-            // Source is 1001x33 (~30:1) — scaled to keep that ratio.
             $footer->addImage($footerPath, [
-                'width'       => 380,
-                'height'      => 12.5,
-                'alignment'   => Jc::CENTER,
+                'width'     => 380,
+                'height'    => 12.5,
+                'alignment' => Jc::CENTER,
             ]);
         }
     }
@@ -175,17 +153,34 @@ class IncidentReportDocxBuilder
 
         if (file_exists($iconPath)) {
             $run->addImage($iconPath, $iconStyle);
-            $run->addText('  ', $textStyle); // small gap between icon and text
+            $run->addText('  ', $textStyle);
         }
 
-        $run->addText($text, $textStyle);
+        $run->addText($this->xmlSafe($text), $textStyle);
+    }
+
+    /**
+     * PHPWord's addText() does not reliably auto-escape XML special
+     * characters ("&", "<", ">") in ANY context in this installation. A raw
+     * "&" anywhere in the document (client name, AI-generated prose,
+     * user-entered names) produces invalid XML that Word refuses to open
+     * outright. Every dynamic string passed to addText() in this file goes
+     * through this first.
+     */
+    private function xmlSafe(string $text): string
+    {
+        return str_replace(
+            ['&', '<', '>'],
+            ['&amp;', '&lt;', '&gt;'],
+            $text
+        );
     }
 
     private function addLabeledLine($section, string $label, string $value): void
     {
         $textRun = $section->addTextRun();
         $textRun->addText($label . ' ', ['bold' => true]);
-        $textRun->addText($value);
+        $textRun->addText($this->xmlSafe($value));
     }
 
     private function extractLocation(string $response): ?string
@@ -197,7 +192,7 @@ class IncidentReportDocxBuilder
     }
 
     /**
-     * Parses the AI response markdown into the 5 fixed sections requested
+     * Parses the AI response markdown into the 4 fixed sections requested
      * in PromptBuilder::incidentAnalysis(). If the model deviates from the
      * requested format, sections fall back to plain text rendering rather
      * than throwing — a slightly-off docx is better than a failed job.
@@ -218,7 +213,7 @@ class IncidentReportDocxBuilder
             $body    = trim(implode("\n", $lines));
 
             if (stripos($heading, 'RECOMMENDATIONS') !== false) {
-                continue; // Recommendations are fixed policy text, added separately below — ignore anything the AI produced here.
+                continue;
             } elseif (stripos($heading, 'CHRONOLOGY') !== false) {
                 $sections[] = ['heading' => $heading, 'type' => 'table', 'rows' => $this->parseMarkdownTable($body)];
             } elseif (stripos($heading, 'ANALYSIS AND KEY FINDINGS') !== false) {
@@ -238,13 +233,13 @@ class IncidentReportDocxBuilder
 
         foreach ($lines as $line) {
             if (!str_starts_with($line, '|')) continue;
-            if (preg_match('/^\|[\s\-:|]+\|$/', $line)) continue; // separator row
+            if (preg_match('/^\|[\s\-:|]+\|$/', $line)) continue;
 
             $rows[] = array_map('trim', explode('|', trim($line, '|')));
         }
 
         if (!empty($rows)) {
-            array_shift($rows); // drop the model's own header row — we render ours
+            array_shift($rows);
         }
 
         return $rows;
@@ -294,7 +289,7 @@ class IncidentReportDocxBuilder
         foreach ($rows as $row) {
             $table->addRow();
             foreach ([0, 1, 2] as $i) {
-                $table->addCell(3000)->addText($row[$i] ?? '');
+                $table->addCell(3000)->addText($this->xmlSafe($row[$i] ?? ''));
             }
         }
     }

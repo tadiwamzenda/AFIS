@@ -31,6 +31,18 @@ class IncidentArchive extends Component
         $this->selectedId = null;
     }
 
+    public function deleteIncident(int $id): void
+    {
+        $incident = AfisIncident::findOrFail($id);
+
+        if ($incident->report_path) {
+            \Illuminate\Support\Facades\Storage::disk('local')->delete($incident->report_path);
+        }
+
+        $incident->delete();
+        session()->flash('success', 'Incident deleted.');
+    }
+
     public function render()
     {
         $incidents = AfisIncident::where('client_id', $this->clientId)
@@ -41,7 +53,7 @@ class IncidentArchive extends Component
             }))
             ->when($this->severityFilter, fn($q) => $q->where('severity', $this->severityFilter))
             ->when($this->statusFilter,   fn($q) => $q->where('status',   $this->statusFilter))
-            ->latest('incident_date')
+            ->latest('created_at')
             ->paginate(15);
 
         $selected = $this->selectedId
