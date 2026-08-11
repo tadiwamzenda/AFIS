@@ -17,18 +17,117 @@ class ReportDataService
 {
     // Zimbabwe public holidays 2024-2026
     private array $zimbabweHolidays = [
-        '2024-01-01', '2024-02-21', '2024-03-29', '2024-04-01',
-        '2024-04-18', '2024-05-01', '2024-05-25', '2024-08-12',
-        '2024-08-13', '2024-12-22', '2024-12-25', '2024-12-26',
-        '2025-01-01', '2025-02-21', '2025-04-18', '2025-04-19',
-        '2025-04-20', '2025-04-21', '2025-04-18', '2025-05-01',
-        '2025-05-25', '2025-08-11', '2025-08-12', '2025-12-22',
-        '2025-12-25', '2025-12-26',
-        '2026-01-01', '2026-02-21', '2026-04-03', '2026-04-05',
-        '2026-04-06', '2026-04-07', '2026-04-18', '2026-05-01',
-        '2026-05-25', '2026-08-11', '2026-08-12', '2026-12-22',
-        '2026-12-25', '2026-12-26',
-    ];
+    // 2024
+    '2024-01-01', // New Year's Day
+    '2024-02-21', // Robert Mugabe National Youth Day
+    '2024-03-29', // Good Friday
+    '2024-04-01', // Easter Monday
+    '2024-04-18', // Independence Day
+    '2024-05-01', // Workers' Day
+    '2024-05-25', // Africa Day
+    '2024-08-12', // Heroes' Day (2nd Monday)
+    '2024-08-13', // Defence Forces Day
+    '2024-12-22', // National Unity Day
+    '2024-12-25', // Christmas Day
+    '2024-12-26', // Boxing Day
+
+    // 2025
+    '2025-01-01', // New Year's Day
+    '2025-02-21', // Robert Mugabe National Youth Day
+    '2025-04-18', // Good Friday
+    '2025-04-21', // Easter Monday
+    '2025-04-18', // Independence Day (falls on Friday)
+    '2025-05-01', // Workers' Day
+    '2025-05-25', // Africa Day (Sunday - observed Monday 26th)
+    '2025-05-26', // Africa Day (observed)
+    '2025-08-11', // Heroes' Day (2nd Monday)
+    '2025-08-12', // Defence Forces Day
+    '2025-12-22', // National Unity Day
+    '2025-12-25', // Christmas Day
+    '2025-12-26', // Boxing Day
+
+    // 2026
+    '2026-01-01', // New Year's Day
+    '2026-02-21', // Robert Mugabe National Youth Day (Saturday)
+    '2026-02-23', // Robert Mugabe National Youth Day (observed - Monday)
+    '2026-04-03', // Good Friday
+    '2026-04-06', // Easter Monday
+    '2026-04-18', // Independence Day (Saturday)
+    '2026-04-20', // Independence Day (observed - Monday)
+    '2026-05-01', // Workers' Day
+    '2026-05-25', // Africa Day (Monday)
+    '2026-08-10', // Heroes' Day (2nd Monday)
+    '2026-08-11', // Defence Forces Day
+    '2026-12-22', // National Unity Day
+    '2026-12-25', // Christmas Day
+    '2026-12-26', // Boxing Day (Saturday)
+    '2026-12-28', // Boxing Day (observed - Monday)
+
+    // 2027
+    '2027-01-01', // New Year's Day
+    '2027-02-21', // Robert Mugabe National Youth Day (Sunday)
+    '2027-02-22', // Robert Mugabe National Youth Day (observed - Monday)
+    '2027-03-26', // Good Friday
+    '2027-03-29', // Easter Monday
+    '2027-04-18', // Independence Day (Sunday)
+    '2027-04-19', // Independence Day (observed - Monday)
+    '2027-05-01', // Workers' Day (Saturday)
+    '2027-05-03', // Workers' Day (observed - Monday)
+    '2027-05-25', // Africa Day
+    '2027-08-09', // Heroes' Day (2nd Monday)
+    '2027-08-10', // Defence Forces Day
+    '2027-12-22', // National Unity Day
+    '2027-12-25', // Christmas Day (Saturday)
+    '2027-12-27', // Christmas Day (observed - Monday)
+    '2027-12-26', // Boxing Day (Sunday)
+    '2027-12-28', // Boxing Day (observed - Monday)
+
+    // 2028
+    '2028-01-01', // New Year's Day (Saturday)
+    '2028-01-03', // New Year's Day (observed - Monday)
+    '2028-02-21', // Robert Mugabe National Youth Day
+    '2028-04-14', // Good Friday
+    '2028-04-17', // Easter Monday
+    '2028-04-18', // Independence Day
+    '2028-05-01', // Workers' Day (Monday)
+    '2028-05-25', // Africa Day
+    '2028-08-14', // Heroes' Day (2nd Monday)
+    '2028-08-15', // Defence Forces Day
+    '2028-12-22', // National Unity Day
+    '2028-12-25', // Christmas Day (Monday)
+    '2028-12-26', // Boxing Day
+
+    // 2029
+    '2029-01-01', // New Year's Day (Monday)
+    '2029-02-21', // Robert Mugabe National Youth Day
+    '2029-03-30', // Good Friday
+    '2029-04-02', // Easter Monday
+    '2029-04-18', // Independence Day
+    '2029-05-01', // Workers' Day
+    '2029-05-25', // Africa Day
+    '2029-08-13', // Heroes' Day (2nd Monday)
+    '2029-08-14', // Defence Forces Day
+    '2029-12-22', // National Unity Day (Saturday)
+    '2029-12-24', // National Unity Day (observed - Monday)
+    '2029-12-25', // Christmas Day
+    '2029-12-26', // Boxing Day
+
+    // 2030
+    '2030-01-01', // New Year's Day
+    '2030-02-21', // Robert Mugabe National Youth Day
+    '2030-04-19', // Good Friday
+    '2030-04-22', // Easter Monday
+    '2030-04-18', // Independence Day
+    '2030-05-01', // Workers' Day
+    '2030-05-25', // Africa Day (Saturday)
+    '2030-05-27', // Africa Day (observed - Monday)
+    '2030-08-12', // Heroes' Day (2nd Monday)
+    '2030-08-13', // Defence Forces Day
+    '2030-12-22', // National Unity Day (Sunday)
+    '2030-12-23', // National Unity Day (observed - Monday)
+    '2030-12-25', // Christmas Day
+    '2030-12-26', // Boxing Day
+];
 
     private int $speedLimit = 120;
 

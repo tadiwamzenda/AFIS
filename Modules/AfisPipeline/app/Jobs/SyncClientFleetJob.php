@@ -17,10 +17,13 @@ class SyncClientFleetJob implements ShouldQueue
     public int $tries   = 3;
     public int $timeout = 120;
 
-    public function __construct(public Client $client) {}
+    public function __construct(
+        public Client $client,
+        public ?int   $instanceOverride = null
+    ) {}
 
     public function handle(PipelineSyncService $service): void
     {
-        $service->syncClient($this->client);
+        $service->syncClient($this->client, $this->instanceOverride);
     }
 }

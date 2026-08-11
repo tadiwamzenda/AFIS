@@ -21,7 +21,7 @@ class PipelineSyncService
         private NavixyDataService $navixy,
         private FuelDataParser $fuelParser,) {}
 
-    public function syncClient(Client $client): AfisSyncLog
+    public function syncClient(Client $client, ?int $instanceOverride = null): AfisSyncLog
     {
         $log = AfisSyncLog::create([
             'client_id'  => $client->id,
@@ -30,7 +30,7 @@ class PipelineSyncService
         ]);
 
         try {
-            $instance = $client->navixy_instance ?? 1;
+            $instance = $instanceOverride ?? $client->navixy_instance ?? 1;
 
         // ── Step 1: Discover trackers via master account ──────────────────
 // Get client's group IDs — scoped to this instance
@@ -62,40 +62,56 @@ $clientGroupIds = AfisTrackerGroup::where('client_id', $client->id)
 
         $existingTracker = AfisTracker::where('navixy_tracker_id', $t['id'])->first();
 
-        if ($existingTracker) {
-            // Only update label/status — NEVER change client_id
+       if ($existingTracker) {
+            // If tracker belongs to a DIFFERENT client — skip entirely
+            // Never update navixy_group_id across client boundaries
+            if ($existingTracker->client_id !== $client->id) {
+                continue;
+            }
             $existingTracker->update([
                 'navixy_group_id' => $validGroupId,
                 'label'           => $t['label'] ?? 'Unknown',
                 'model_name'      => $t['source']['model'] ?? null,
                 'imei'            => $imei,
                 'is_active'       => true,
-                'online_status'   => ($t['status']['identification'] ?? '') === 'active' ? 'online' : 'offline',
                 'last_synced_at'  => now(),
             ]);
-        } else {
+        } 
+        else {
             // Only create with client_id on first discovery
             AfisTracker::create([
-                'navixy_tracker_id' => $t['id'],
-                'client_id'         => $client->id,
-                'navixy_group_id'   => $validGroupId,
-                'label'             => $t['label'] ?? 'Unknown',
-                'model_name'        => $t['source']['model'] ?? null,
-                'imei'              => $imei,
-                'is_active'         => true,
-                'online_status'     => ($t['status']['identification'] ?? '') === 'active' ? 'online' : 'offline',
-                'last_synced_at'    => now(),
-            ]);
+            'navixy_tracker_id' => $t['id'],
+            'client_id'         => $client->id,
+            'navixy_group_id'   => $validGroupId,
+            'label'             => $t['label'] ?? 'Unknown',
+            'model_name'        => $t['source']['model'] ?? null,
+            'imei'              => $imei,
+            'is_active'         => true,
+            'online_status'     => 'unknown', // will be updated by Step 2b via getTrackerStates()
+            'last_synced_at'    => now(),
+        ]);
         }
     }
 }
 
+        // Always get instance group IDs for Step 2b and Steps 3-6 scoping
+        $instanceGroupIds = AfisTrackerGroup::where('client_id', $client->id)
+            ->where('navixy_instance', $instance)
+            ->pluck('navixy_group_id')
+            ->toArray();
+
+
             // ── Step 2: Get all known trackers for this client ────────────────
-            $knownTrackers = AfisTracker::where('client_id', $client->id)->get();
+            $instanceTrackers = AfisTracker::where('client_id', $client->id)->get();
 
             // ── Step 2b: Update online_status from Navixy get_states (real-time) ──
-            $navixyIds = $knownTrackers->pluck('navixy_tracker_id')->toArray();
-            $states    = $this->navixy->getTrackerStates($navixyIds, $instance);
+            
+            $instanceTrackerIds = $instanceTrackers
+                ->filter(fn($t) => in_array($t->navixy_group_id, $instanceGroupIds))
+                ->pluck('navixy_tracker_id')
+                ->toArray();
+
+            $states = $this->navixy->getTrackerStates($instanceTrackerIds, $instance);
 
             // Map navixy_tracker_id → AFIS online_status
             // active/idle = online, offline/signal_lost/just_registered = offline
@@ -105,7 +121,7 @@ $clientGroupIds = AfisTrackerGroup::where('client_id', $client->id)
                 $statusMap[(int)$navixyId] = in_array($conn, ['active', 'idle']) ? 'online' : 'offline';
             }
 
-            foreach ($knownTrackers as $tracker) {
+            foreach ($instanceTrackers as $tracker) {
                 $newStatus = $statusMap[$tracker->navixy_tracker_id] ?? 'unknown';
                 if ($newStatus !== $tracker->online_status) {
                     AfisTracker::where('id', $tracker->id)
@@ -113,23 +129,34 @@ $clientGroupIds = AfisTrackerGroup::where('client_id', $client->id)
                 }
             }
 
-            if ($knownTrackers->isEmpty()) {
+            if ($instanceTrackers->isEmpty()) {
                 $log->update([
                     'status'        => 'completed',
                     'completed_at'  => now(),
-                    'error_message' => 'No trackers found. Set navixy_group_prefix on client and run afis:sync-groups first.',
+                    'error_message' => 'No trackers found.',
                 ]);
                 return $log;
             }
 
             $from        = now()->subHours(24);
             $to          = now();
-            $trackerIds  = $knownTrackers->pluck('navixy_tracker_id')->toArray();
-            $tripsSynced = 0;
+            $tripsSynced  = 0;
             $alertsSynced = 0;
 
+            // Scope to trackers on THIS instance only (critical for multi-instance clients)
+            $instanceTrackers = $instanceTrackers->filter(function($tracker) use ($instanceGroupIds) {
+                return in_array($tracker->navixy_group_id, $instanceGroupIds);
+            });
+
+            // If no instanceGroupIds set yet (first sync), use all known trackers
+            if (empty($instanceGroupIds)) {
+                $instanceTrackers = $instanceTrackers;
+            }
+
+            $trackerIds = $instanceTrackers->pluck('navixy_tracker_id')->toArray();
+
             // ── Step 3: Sync trips per tracker ────────────────────────────────
-            foreach ($knownTrackers as $tracker) {
+            foreach ($instanceTrackers as $tracker) {
                 $trips = $this->navixy->getTrips($tracker->navixy_tracker_id, $from, $to, $instance);
 
                 foreach ($trips as $trip) {
@@ -167,7 +194,7 @@ $clientGroupIds = AfisTrackerGroup::where('client_id', $client->id)
                 $mileageData = $mileageData + $chunkData;
                 usleep(200000);
             }
-            foreach ($knownTrackers as $tracker) {
+            foreach ($instanceTrackers as $tracker) {
                 $trackerMileage = $mileageData[(string) $tracker->navixy_tracker_id] ?? [];
                 foreach ($trackerMileage as $date => $data) {
                     AfisMileageDaily::updateOrCreate(
@@ -183,7 +210,7 @@ $clientGroupIds = AfisTrackerGroup::where('client_id', $client->id)
 
             // ── Step 5: Sync alerts ───────────────────────────────────────────
             $alerts     = $this->navixy->getAlerts($trackerIds, $from, $to, $instance);
-            $trackerMap = $knownTrackers->keyBy('navixy_tracker_id');
+            $trackerMap = $instanceTrackers->keyBy('navixy_tracker_id');
 
             foreach ($alerts as $alert) {
                 $trackerId = $alert['tracker_id'] ?? null;
@@ -239,7 +266,7 @@ $clientGroupIds = AfisTrackerGroup::where('client_id', $client->id)
 
             if (!$fuelAlreadySynced) {
                 // Only sync fuel for trackers that have fuel sensors (those with fuel events)
-                $fuelTrackerIds = \Modules\AfisPipeline\Models\AfisFuelEvent::whereIn('tracker_id', $knownTrackers->pluck('id'))
+                $fuelTrackerIds = \Modules\AfisPipeline\Models\AfisFuelEvent::whereIn('tracker_id', $instanceTrackers->pluck('id'))
                     ->distinct()
                     ->pluck('navixy_tracker_id')
                     ->toArray();
@@ -259,7 +286,7 @@ $clientGroupIds = AfisTrackerGroup::where('client_id', $client->id)
 
             $log->update([
                 'status'          => 'completed',
-                'trackers_synced' => $knownTrackers->count(),
+                'trackers_synced' => $instanceTrackers->count(),
                 'trips_synced'    => $tripsSynced,
                 'events_synced'   => $alertsSynced,
                 'completed_at'    => now(),

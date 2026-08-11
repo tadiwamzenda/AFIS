@@ -7,6 +7,7 @@ use Modules\AdmmInventory\Models\Client;
 use Modules\AfisPipeline\Models\AfisTrackerGroup;
 use Modules\AfisPipeline\Services\NavixyDataService;
 use Illuminate\Support\Facades\Log;
+use Modules\AfisPipeline\Models\AfisTracker;
 
 class SyncTrackerGroupsCommand extends Command
 {
@@ -83,6 +84,25 @@ if ($existing) {
             }
         }
 
+        // ── Clean up ghost trackers (removed from Navixy but still in AFIS) ──
+$this->line("  → Cleaning up ghost trackers...");
+
+$inst1Ids = collect($navixy->getAllTrackers(1))->pluck('id')->toArray();
+$inst2Ids = collect($navixy->getAllTrackers(2))->pluck('id')->toArray();
+$allNavixyIds = array_merge($inst1Ids, $inst2Ids);
+
+        if (!empty($allNavixyIds)) {
+            $ghostCount = AfisTracker::whereNotIn('navixy_tracker_id', $allNavixyIds)
+                ->where('client_id', '!=', 21)
+                ->update(['client_id' => 21]);
+            
+            if ($ghostCount > 0) {
+                $this->line("  → Moved {$ghostCount} ghost tracker(s) to MISCELLANEOUS");
+                Log::info("afis:sync-groups: moved {$ghostCount} ghost trackers to MISCELLANEOUS");
+            } else {
+                $this->line("  → No ghost trackers found");
+            }
+        }
         $this->info("Done. Synced {$totalSynced} groups.");
     }
 }
