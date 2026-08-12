@@ -11,10 +11,11 @@ class AfisTrip extends Model
     public $timestamps  = false;
     protected $table    = 'afis_trips';
     protected $fillable = [
-        'tracker_id', 'client_id', 'navixy_tracker_id',
-        'start_time', 'end_time', 'distance_km',
-        'avg_speed_kmh', 'max_speed_kmh',
-        'duration_minutes', 'stops_count',
+    'tracker_id', 'client_id', 'navixy_tracker_id',
+    'navixy_trip_id',
+    'start_time', 'end_time', 'distance_km',
+    'avg_speed_kmh', 'max_speed_kmh',
+    'duration_minutes', 'stops_count',
     ];
 
     protected $casts = [

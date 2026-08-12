@@ -167,22 +167,44 @@ $clientGroupIds = AfisTrackerGroup::where('client_id', $client->id)
                     $endTime         = Carbon::parse($trip['end_date']);
                     $durationMinutes = (int) $startTime->diffInMinutes($endTime);
 
-                    AfisTrip::firstOrCreate(
-                        [
-                            'tracker_id'        => $tracker->id,
-                            'navixy_tracker_id' => $tracker->navixy_tracker_id,
-                            'start_time'        => $startTime,
-                        ],
-                        [
-                            'client_id'        => $client->id,
-                            'end_time'         => $endTime,
-                            'distance_km'      => $trip['length'] ?? 0,
-                            'avg_speed_kmh'    => min($trip['avg_speed'] ?? 0, 200),
-                            'max_speed_kmh'    => min($trip['max_speed'] ?? 0, 200),
-                            'duration_minutes' => $durationMinutes,
-                        ]
-                    );
-                    $tripsSynced++;
+                   $navixyTripId = $trip['id'] ?? null;
+
+                    if ($navixyTripId) {
+                        AfisTrip::updateOrCreate(
+                            [
+                                'tracker_id'     => $tracker->id,
+                                'navixy_trip_id' => $navixyTripId,
+                            ],
+                            [
+                                'client_id'         => $client->id,
+                                'navixy_tracker_id' => $tracker->navixy_tracker_id,
+                                'start_time'        => $startTime,
+                                'end_time'          => $endTime,
+                                'distance_km'       => $trip['length'] ?? 0,
+                                'avg_speed_kmh'     => min($trip['avg_speed'] ?? 0, 200),
+                                'max_speed_kmh'     => min($trip['max_speed'] ?? 0, 200),
+                                'duration_minutes'  => $durationMinutes,
+                            ]
+                        );
+                    } else {
+                        // Fallback: no Navixy trip ID — use start_time as dedup key
+                        AfisTrip::updateOrCreate(
+                            [
+                                'tracker_id'        => $tracker->id,
+                                'navixy_tracker_id' => $tracker->navixy_tracker_id,
+                                'start_time'        => $startTime,
+                            ],
+                            [
+                                'client_id'        => $client->id,
+                                'end_time'         => $endTime,
+                                'distance_km'      => $trip['length'] ?? 0,
+                                'avg_speed_kmh'    => min($trip['avg_speed'] ?? 0, 200),
+                                'max_speed_kmh'    => min($trip['max_speed'] ?? 0, 200),
+                                'duration_minutes' => $durationMinutes,
+                            ]
+                        );
+                    }
+$tripsSynced++;
                 }
             }
 

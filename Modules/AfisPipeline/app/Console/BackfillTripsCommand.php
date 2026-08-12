@@ -66,14 +66,33 @@ class BackfillTripsCommand extends Command
                 $trips = $navixy->getTrips($tracker->navixy_tracker_id, $tripChunkStart, $tripChunkEnd, $instance);
 
                 foreach ($trips as $trip) {
-                    if (($trip['type'] ?? '') === 'single_report') continue;
-                    if (empty($trip['end_date'])) continue;
+                if (($trip['type'] ?? '') === 'single_report') continue;
+                if (empty($trip['end_date'])) continue;
 
-                    $startTime       = Carbon::parse($trip['start_date']);
-                    $endTime         = Carbon::parse($trip['end_date']);
-                    $durationMinutes = (int) $startTime->diffInMinutes($endTime);
+                $startTime       = Carbon::parse($trip['start_date']);
+                $endTime         = Carbon::parse($trip['end_date']);
+                $durationMinutes = (int) $startTime->diffInMinutes($endTime);
+                $navixyTripId    = $trip['id'] ?? null;
 
-                    AfisTrip::firstOrCreate(
+                if ($navixyTripId) {
+                    AfisTrip::updateOrCreate(
+                        [
+                            'tracker_id'     => $tracker->id,
+                            'navixy_trip_id' => $navixyTripId,
+                        ],
+                        [
+                            'client_id'         => $client->id,
+                            'navixy_tracker_id' => $tracker->navixy_tracker_id,
+                            'start_time'        => $startTime,
+                            'end_time'          => $endTime,
+                            'distance_km'       => $trip['length'] ?? 0,
+                            'avg_speed_kmh'     => min($trip['avg_speed'] ?? 0, 200),
+                            'max_speed_kmh'     => min($trip['max_speed'] ?? 0, 200),
+                            'duration_minutes'  => $durationMinutes,
+                        ]
+                    );
+                } else {
+                    AfisTrip::updateOrCreate(
                         [
                             'tracker_id'        => $tracker->id,
                             'navixy_tracker_id' => $tracker->navixy_tracker_id,
@@ -88,8 +107,9 @@ class BackfillTripsCommand extends Command
                             'duration_minutes' => $durationMinutes,
                         ]
                     );
-                    $tripCount++;
                 }
+                $tripCount++;
+            }
 
                      usleep(200000); // 0.2s delay per tracker
                       $tripChunkStart = $tripChunkEnd->copy()->addDay();
