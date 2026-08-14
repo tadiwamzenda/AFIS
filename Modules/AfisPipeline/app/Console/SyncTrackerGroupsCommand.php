@@ -103,6 +103,17 @@ $allNavixyIds = array_merge($inst1Ids, $inst2Ids);
                 $this->line("  → No ghost trackers found");
             }
         }
+
+        // Also move ungrouped trackers (navixy_group_id = NULL) to MISCELLANEOUS
+        // These were created by discoverTrackers() with no group mapping
+        $ungroupedCount = AfisTracker::whereNull('navixy_group_id')
+            ->where('client_id', '!=', 21)
+            ->update(['client_id' => 21]);
+
+        if ($ungroupedCount > 0) {
+            $this->line("  → Moved {$ungroupedCount} ungrouped tracker(s) to MISCELLANEOUS");
+            Log::info("afis:sync-groups: moved {$ungroupedCount} ungrouped trackers to MISCELLANEOUS");
+        }
         $this->info("Done. Synced {$totalSynced} groups.");
     }
 }

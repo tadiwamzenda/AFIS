@@ -3,15 +3,20 @@
     {{-- Stats --}}
     <div class="grid grid-cols-2 lg:grid-cols-5 gap-4">
         @foreach([
-            ['Clients',   $totals['clients']],
-            ['Trackers',  $totals['trackers']],
-            ['Trips',     $totals['trips']],
-            ['Events',    $totals['events']],
-            ['AI Reports',$totals['reports']],
-        ] as [$label, $count])
-        <div class="bg-white rounded-xl border border-gray-200 p-5">
-            <p class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">{{ $label }}</p>
-            <p class="text-3xl font-bold text-gray-900">{{ number_format($count) }}</p>
+            ['Clients',    $totals['clients'],  'bg-indigo-500/15', 'text-indigo-400', 'M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 100-8 4 4 0 000 8zm6 0a4 4 0 10-8 0'],
+            ['Trackers',   $totals['trackers'], 'bg-emerald-500/15','text-emerald-400','M9 17v-2a4 4 0 118 0v2M5 17h14a2 2 0 002-2v-2a2 2 0 00-2-2H5a2 2 0 00-2 2v2a2 2 0 002 2z'],
+            ['Trips',      $totals['trips'],    'bg-sky-500/15',    'text-sky-400',    'M13 7l5 5m0 0l-5 5m5-5H6'],
+            ['Events',     $totals['events'],   'bg-amber-500/15',  'text-amber-400',  'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z'],
+            ['AI Reports', $totals['reports'],  'bg-purple-500/15', 'text-purple-400', 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z'],
+        ] as [$label, $count, $chipBg, $chipText, $icon])
+        <div class="relative rounded-2xl p-5 bg-gradient-to-br from-slate-900/95 to-slate-800/90 border border-white/5 shadow-xl shadow-slate-900/20">
+            <div class="flex items-center gap-2 mb-3">
+                <span class="w-7 h-7 rounded-lg {{ $chipBg }} flex items-center justify-center">
+                    <svg class="w-4 h-4 {{ $chipText }}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="{{ $icon }}" /></svg>
+                </span>
+                <p class="text-xs font-medium text-slate-400 uppercase tracking-wider">{{ $label }}</p>
+            </div>
+            <p class="text-3xl font-bold text-white">{{ number_format($count) }}</p>
         </div>
         @endforeach
     </div>

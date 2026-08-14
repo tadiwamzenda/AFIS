@@ -92,6 +92,24 @@ class GenerateAiReportJob implements ShouldQueue
                 }
             }
         }
+
+        // Build the vehicle behaviour PDF and link it back to the ai_report row.
+        // AI analysis still counts as a success even if the PDF build fails —
+        // don't lose the (expensive) AI response over a formatting problem.
+        if ($this->reportType === 'vehicle_behaviour' && $tracker) {
+            try {
+                $reportPath = app(\Modules\AfisPortal\Services\VehicleReportPdfBuilder::class)
+                    ->build($aiReport, $tracker, $this->options['days'] ?? 30);
+
+                $aiReport->update(['report_path' => $reportPath]);
+            } catch (\Throwable $e) {
+                Log::error('GenerateAiReportJob: vehicle report PDF build failed', [
+                    'tracker_id' => $tracker->id,
+                    'error'      => $e->getMessage(),
+                ]);
+            }
+        }
+
         Log::info("GenerateAiReportJob: completed {$this->reportType} for client {$this->clientId}");
             }
 }

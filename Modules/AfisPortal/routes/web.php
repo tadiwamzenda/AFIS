@@ -42,6 +42,7 @@ Route::middleware('auth')->prefix('admin/afis')->name('admin.afis.')->group(func
     Route::get('/generate/standard',             [ReportController::class, 'standardReport'])->name('reports.standard');
     Route::get('/generate/ai',                   [ReportController::class, 'aiReport'])->name('reports.ai');
     Route::get('/generate/download/{id}',        [ReportController::class, 'download'])->name('reports.download');
+    Route::get('/vehicle-reports/{id}/download',  [ReportController::class, 'downloadVehicleReport'])->name('vehicle-reports.download');
     Route::delete('/generate/delete/{id}',       [ReportController::class, 'destroy'])->name('reports.destroy');
     
 });

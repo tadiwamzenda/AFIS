@@ -192,14 +192,100 @@ PROMPT;
         $to    = Carbon::now()->endOfDay();
         $trips = AfisTrip::where('tracker_id', $tracker->id)->whereBetween('start_time', [$from, $to])->get();
 
-        $totalKm       = round($trips->sum('distance_km'), 2);
-        $totalTrips    = $trips->count();
-        $avgSpeed      = round($trips->avg('avg_speed_kmh'), 1);
-        $maxSpeed      = round($trips->max('max_speed_kmh'), 1);
-        $totalHours    = round($trips->sum('duration_minutes') / 60, 1);
-        $weekendKm     = round($trips->filter(fn($t) => $this->isWeekendOrHoliday(Carbon::parse($t->start_time)))->sum('distance_km'), 2);
-        $afterHoursKm  = round($trips->filter(fn($t) => $this->isAfterHours(Carbon::parse($t->start_time)))->sum('distance_km'), 2);
-        $speedingTrips = $trips->filter(fn($t) => $t->max_speed_kmh > $this->speedLimitKmh)->count();
+        $totalKm    = round($trips->sum('distance_km'), 2);
+        $totalTrips = $trips->count();
+        $totalHours = round($trips->sum('duration_minutes') / 60, 1);
+
+        // Same >=195 km/h GPS-error exclusion used fleet-wide and in incident
+        // reports — a reading at or above that threshold is a known sensor
+        // error, not a real speed, and must never count as evidence here.
+        $validSpeedTrips = $trips->filter(fn($t) => $t->max_speed_kmh < 195);
+        $maxSpeed         = $validSpeedTrips->isNotEmpty() ? round($validSpeedTrips->max('max_speed_kmh'), 0) : 0;
+        $speedingTripsAll = $trips->filter(fn($t) => $t->max_speed_kmh > $this->speedLimitKmh && $t->max_speed_kmh < 195);
+        $speedingTripsQty = $speedingTripsAll->count();
+
+        $weekendKm    = round($trips->filter(fn($t) => $this->isWeekendOrHoliday(Carbon::parse($t->start_time)))->sum('distance_km'), 2);
+        $afterHoursKm = round($trips->filter(fn($t) => $this->isAfterHours(Carbon::parse($t->start_time)))->sum('distance_km'), 2);
+
+        // ── Deterministic scores — same formulas as the Fleet Report, so a
+        // vehicle's score means the same thing everywhere it appears ────────
+        $scored = $this->scoreVehicles([[
+            'label'          => $tracker->label,
+            'mileage'        => $totalKm,
+            'max_speed'      => $maxSpeed,
+            'speeding_trips' => $speedingTripsQty,
+            'after_hrs_km'   => $afterHoursKm,
+        ]], $this->speedLimitKmh)[0];
+
+        $safetyScore = $scored['safety_score'];
+        $riskScore   = $scored['risk_score'];
+
+        // ── Fuel: only present if this specific vehicle has fuel sensor data ──
+        $fuelDaily = \Modules\AfisPipeline\Models\AfisFuelDaily::where('tracker_id', $tracker->id)
+            ->whereBetween('date', [$from->toDateString(), $to->toDateString()])
+            ->get();
+        $fuelingDays  = $fuelDaily->filter(fn($f) => $f->refuel_count > 0);
+        $hasFuelData  = $fuelingDays->isNotEmpty();
+        $fuelCount    = (int) $fuelingDays->sum('refuel_count');
+        $fuelLitres   = round((float) $fuelingDays->sum('volume_litres'), 2);
+        $fuelEconomy  = ($hasFuelData && $totalKm > 0)
+            ? round(($fuelLitres / $totalKm) * 100, 2)
+            : null;
+
+        // ── Speeding events — individually dated/timed/located, not capped
+        // by the 30-row trip log below (a high-mileage vehicle's speeding
+        // events could easily fall outside that window). Location comes from
+        // afis_device_alerts 'speedup' events (same source, same honest
+        // fallback, as the Standard Report) — afis_trips has no location
+        // column at all, so trip-level data alone can never provide this.
+        $speedingDays = $speedingTripsAll->map(fn($t) => Carbon::parse($t->start_time)->toDateString())->unique()->count();
+        $activeDays   = $trips->map(fn($t) => Carbon::parse($t->start_time)->toDateString())->unique()->count();
+
+        $speedingChrono = $speedingTripsAll->sortBy('start_time')->values();
+        $speedingEventsList = $speedingChrono->take(20)->map(function ($t) use ($tracker) {
+            $tripStart = Carbon::parse($t->start_time);
+            $tripEnd   = Carbon::parse($t->end_time);
+
+            $alert = \Modules\AfisPipeline\Models\AfisDeviceAlert::where('tracker_id', $tracker->id)
+                ->where('event_type', 'speedup')
+                ->whereBetween('occurred_at', [$tripStart->copy()->subHour(), $tripEnd->copy()->addHour()])
+                ->whereNotNull('address')
+                ->orderByDesc('occurred_at')
+                ->first();
+
+            return sprintf(
+                "  - %s at %s — %.0f km/h — %s",
+                $tripStart->format('d M Y'),
+                $tripStart->format('H:i'),
+                $t->max_speed_kmh,
+                $alert?->address ?? ' Location unavailable, refer to system Speed Violation report'
+            );
+        })->implode("\n");
+
+        if ($speedingChrono->isEmpty()) {
+            $speedingEventsList = '  None recorded this period.';
+        } elseif ($speedingChrono->count() > 20) {
+            $speedingEventsList .= "\n  ... and " . ($speedingChrono->count() - 20) . ' more speeding events';
+        }
+
+        // ── Activity trend: first half of the period vs. second half —
+        // computed in PHP so the AI states a real, verifiable trend rather
+        // than eyeballing the trip log and guessing at a pattern. Works
+        // consistently regardless of whether $days is 7, 30, 60, or 90.
+        $midpoint = $from->copy()->addDays(intdiv($days, 2));
+
+        $firstHalf  = $trips->filter(fn($t) => Carbon::parse($t->start_time)->lt($midpoint));
+        $secondHalf = $trips->filter(fn($t) => Carbon::parse($t->start_time)->gte($midpoint));
+
+        $firstHalfTrips  = $firstHalf->count();
+        $secondHalfTrips = $secondHalf->count();
+        $firstHalfKm     = round($firstHalf->sum('distance_km'), 1);
+        $secondHalfKm    = round($secondHalf->sum('distance_km'), 1);
+        $firstHalfHours  = round($firstHalf->sum('duration_minutes') / 60, 1);
+        $secondHalfHours = round($secondHalf->sum('duration_minutes') / 60, 1);
+
+        $tripsTrendPct = $firstHalfTrips > 0 ? round((($secondHalfTrips - $firstHalfTrips) / $firstHalfTrips) * 100, 1) : null;
+        $kmTrendPct    = $firstHalfKm > 0    ? round((($secondHalfKm - $firstHalfKm) / $firstHalfKm) * 100, 1) : null;
 
         $tripList = $trips->take(30)->map(fn($t) => sprintf(
             "  %s | %s min | %.1f km | Avg %.0f km/h | Max %.0f km/h%s%s",
@@ -208,58 +294,87 @@ PROMPT;
             $t->distance_km,
             $t->avg_speed_kmh,
             $t->max_speed_kmh,
-            $t->max_speed_kmh > $this->speedLimitKmh ? ' ⚠ SPEEDING' : '',
+            ($t->max_speed_kmh > $this->speedLimitKmh && $t->max_speed_kmh < 195) ? ' ⚠ SPEEDING' : '',
             $this->isAfterHours(Carbon::parse($t->start_time)) ? ' 🌙 AFTER HOURS' : ''
-        ))->implode("\n");
+        ))->implode("\n") ?: '  No trips recorded in this period.';
+
+        $fuelBlock = '';
+        $fuelInstruction = 'Do not mention fuel at all — this vehicle has no fuel sensor data.';
+        if ($hasFuelData) {
+            $fuelBlock = "\n**Fuel:** {$fuelCount} refuel(s), {$fuelLitres}L total" .
+                ($fuelEconomy !== null ? ", {$fuelEconomy} L/100km" : '');
+            $fuelInstruction = 'Fuel Behaviour: state the refuel count, volume, and L/100km figure exactly as given above. No commentary beyond stating the numbers.';
+        }
 
         return <<<PROMPT
 You are a fleet intelligence analyst for Bantu Track, a GPS tracking company in Zimbabwe.
 
-Analyse the GPS trip data below for a single vehicle and produce a professional vehicle behaviour report.
+Produce a vehicle behaviour report for a single vehicle using EXACTLY the structure below. Every number under "COMPUTED DATA" is authoritative — use it exactly as given, do not recompute, do not invent numbers not present here.
+
+Do not include a title, vehicle name, client name, or period line anywhere in your output — the system renders those separately. Your output must begin directly with "## 1. VEHICLE SUMMARY". Do not produce a Recommendations section — that is rendered separately by the system.
+
+CRITICAL WORD BANS:
+- Never suggest immobilisation or driver reassignment as an action, anywhere.
+- Do not editorialise about whether after-hours activity was "authorised" or suspicious — state the figure as a fact only.
+- Any speed reading of 195 km/h or above is a known GPS/sensor error — already excluded from the data below; do not reintroduce or reference such readings.
 
 ## Vehicle: {$tracker->label}
 ## Client: {$tracker->client?->name}
 ## Period: {$from->format('d M Y')} to {$to->format('d M Y')} ({$days} days)
 
-## VEHICLE DATA SUMMARY
+## COMPUTED DATA
 - Total trips: {$totalTrips}
 - Total distance: {$totalKm} km
 - Total hours driven: {$totalHours} h
-- Average speed: {$avgSpeed} km/h
-- Maximum speed recorded: {$maxSpeed} km/h
-- Speed limit (Zimbabwe open road): {$this->speedLimitKmh} km/h
-- Speeding trips (>{$this->speedLimitKmh} km/h): {$speedingTrips} of {$totalTrips}
+- Maximum valid speed recorded: {$maxSpeed} km/h
+- Speeding trips (>{$this->speedLimitKmh} km/h, GPS errors excluded): {$speedingTripsQty} of {$totalTrips}
+- Speeding occurred on {$speedingDays} distinct day(s), out of {$activeDays} active day(s) this period
 - Weekend/holiday driving: {$weekendKm} km
 - After hours driving (18:00-06:00): {$afterHoursKm} km
+- Safety score: {$safetyScore}/100
+- Risk score: {$riskScore}/100
+{$fuelBlock}
+
+## SPEEDING EVENTS (chronological — date, time, speed, location)
+{$speedingEventsList}
+
+## ACTIVITY TREND — first half vs. second half of the {$days}-day period
+- First half: {$firstHalfTrips} trips, {$firstHalfKm} km, {$firstHalfHours} h
+- Second half: {$secondHalfTrips} trips, {$secondHalfKm} km, {$secondHalfHours} h
+- Trip count change: {$this->formatTrendPct($tripsTrendPct)}
+- Distance change: {$this->formatTrendPct($kmTrendPct)}
 
 ## TRIP LOG (most recent 30 trips)
 {$tripList}
 
-## REPORT SECTIONS REQUIRED
+## REQUIRED REPORT STRUCTURE — FOLLOW EXACTLY
 
-### 1. VEHICLE SUMMARY
-Brief overview of this vehicle's activity and key findings.
+## 1. VEHICLE SUMMARY
+2-3 sentences: total trips, distance, and overall activity level for this vehicle this period.
 
-### 2. DRIVING BEHAVIOUR RATING
-Rate as: EXCELLENT / GOOD / NEEDS IMPROVEMENT / POOR — with justification.
+## 2. DRIVING BEHAVIOUR
+- State the safety score exactly as given above.
+- Speeding: state the trip count exactly as given above. If any speeding events are listed under SPEEDING EVENTS, list each one exactly as given (date, time, speed, location) — this is historical evidence and must be included whenever events exist. Comment on whether the events are concentrated in a short window or spread across the period, using the "distinct days" figure given above. Focus your commentary on the highest speed recorded and its context, not on minor/borderline readings.
+- After-hours: state the km figure as a fact, no commentary on legitimacy.
+- {$fuelInstruction}
 
-### 3. SPEED COMPLIANCE
-Detail any speeding incidents. What is the highest speed recorded? On what type of road/context (if determinable)? What is the risk level?
+## 3. TRIP PATTERNS
+1-2 sentences on any pattern visible in the trip log above (regular routes, unusual times, long gaps) — only if genuinely supported by the data; say so plainly if no clear pattern exists. Then state whether trip count and distance increased, decreased, or stayed roughly constant between the first and second half of the period, using the ACTIVITY TREND figures given above exactly — do not invent a percentage not shown there.
 
-### 4. WORKING HOURS COMPLIANCE
-Comment on weekend/holiday usage and after hours driving. Is the level acceptable for this type of vehicle/organisation?
+## 4. RISK ASSESSMENT
+- State the risk score exactly as given above.
+- 1-2 sentences on what's driving that score (speeding, after-hours, or both) — reference the specific numbers above, don't invent new ones.
 
-### 5. TRIP PATTERNS
-What patterns do you observe? Regular routes? Unusual trip times? Long idle periods between trips?
-
-### 6. RISK ASSESSMENT
-Overall risk score: X/10 — with justification based strictly on the data.
-
-### 7. RECOMMENDED ACTIONS
-3-5 specific actions for the fleet manager regarding this vehicle.
-
-Base all analysis strictly on the data provided. Do not invent figures.
+Do not repeat the raw data as a table — narrate and interpret it. Stop after Section 4.
 PROMPT;
+    }
+
+    private function formatTrendPct(?float $pct): string
+    {
+        if ($pct === null) return 'not available (no trips in first half to compare against)';
+        if ($pct > 5)  return "up {$pct}%";
+        if ($pct < -5) return 'down ' . abs($pct) . '%';
+        return 'roughly constant (' . ($pct >= 0 ? '+' : '') . "{$pct}%)";
     }
 
     // ─── Predictive Intelligence ──────────────────────────────────────────────

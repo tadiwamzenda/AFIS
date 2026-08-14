@@ -141,6 +141,21 @@ $data = $this->reportData->buildReportData($client, $from, $to, $selectedGroups)
         return response()->download($path, $report->filename, ['Content-Type' => 'application/pdf']);
     }
 
+    public function downloadVehicleReport(int $id)
+    {
+        $report = \Modules\AfisEngine\Models\AfisAiReport::findOrFail($id);
+
+        abort_unless($report->report_path, 404);
+
+        $path = Storage::disk('local')->path($report->report_path);
+        abort_unless(file_exists($path), 404);
+
+        $tracker = \Modules\AfisPipeline\Models\AfisTracker::find($report->tracker_id);
+        $label   = $tracker?->label ?? 'vehicle';
+
+        return response()->download($path, "Vehicle_Report_{$label}_{$report->id}.pdf", ['Content-Type' => 'application/pdf']);
+    }
+
     public function destroy(int $id)
     {
         $report = AfisGeneratedReport::findOrFail($id);

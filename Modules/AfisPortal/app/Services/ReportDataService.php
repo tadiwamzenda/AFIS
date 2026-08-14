@@ -383,36 +383,62 @@ class ReportDataService
             ->values()
             ->toArray();
 
-        // ── Speeding detail (built after vehicles array is complete) ──────────
-        $speedingDetail = collect($vehicles)
-            ->filter(fn($v) => $v['speeding_trips'] > 0)
-            ->map(function ($v) use ($from, $to) {
-                $worstTrip = AfisTrip::where('tracker_id', $v['id'])
-                    ->whereBetween('start_time', [$from, $to])
-                    ->whereBetween('max_speed_kmh', [$this->speedLimit, 195]) // exclude GPS errors
+        // ── Speeding detail: ONE ROW PER VEHICLE PER DAY it actually
+        // exceeded the limit — not just the single worst day across the
+        // whole period, which was silently hiding every other qualifying
+        // day. Frequency = count of qualifying TRIPS that day (confirmed
+        // correct methodology — AFIS counts trips, Navixy counts individual
+        // GPS pings, different metrics by design, not a bug).
+        $dailySpeeding = DB::table('afis_trips')
+            ->whereIn('tracker_id', $trackerIds)
+            ->whereBetween('start_time', [$from, $to])
+            ->where('max_speed_kmh', '>=', $this->speedLimit)
+            ->where('max_speed_kmh', '<', 195) // GPS-error exclusion, same boundary as the fleet-wide rule
+            ->selectRaw('tracker_id, DATE(start_time) as day, MAX(max_speed_kmh) as day_max_speed, COUNT(*) as day_frequency')
+            ->groupBy('tracker_id', DB::raw('DATE(start_time)'))
+            ->get();
+
+        $vehiclesById = collect($vehicles)->keyBy('id');
+
+        $speedingDetail = $dailySpeeding->map(function ($row) use ($vehiclesById) {
+                $v = $vehiclesById->get($row->tracker_id);
+                if (!$v) return null;
+
+                // Worst trip for THIS specific day (not the whole period).
+                $worstTripThatDay = AfisTrip::where('tracker_id', $row->tracker_id)
+                    ->whereDate('start_time', $row->day)
+                    ->where('max_speed_kmh', '>=', $this->speedLimit)
+                    ->where('max_speed_kmh', '<', 195)
                     ->orderByDesc('max_speed_kmh')
                     ->first();
 
-                $alert = AfisDeviceAlert::where('tracker_id', $v['id'])
-                    ->whereIn('event_type', ['speedup'])
-                    ->whereBetween('occurred_at', [$from, $to])
-                    ->whereNotNull('address')
-                    ->orderByDesc('occurred_at')
-                    ->first();
+                // Match the alert to THIS day, closest in time to that
+                // day's worst trip — same principle as before, scoped per-day.
+                $alert = null;
+                if ($worstTripThatDay) {
+                    $tripStart = Carbon::parse($worstTripThatDay->start_time);
+                    $alert = AfisDeviceAlert::where('tracker_id', $row->tracker_id)
+                        ->where('event_type', 'speedup')
+                        ->whereDate('occurred_at', $row->day)
+                        ->whereNotNull('address')
+                        ->get()
+                        ->sortBy(fn($a) => abs(Carbon::parse($a->occurred_at)->diffInSeconds($tripStart)))
+                        ->first();
+                }
 
-                 return [
+                return [
                     'label'     => $v['label'],
                     'group'     => $v['group'],
-                    'top_speed' => $v['max_speed'],
-                    // No fallback guess — if no speedup alert exists (e.g. speed alert rules aren't configured in Navixy for 
-                    //this clientor this is a historical period predating when they were), the address genuinely doesn't exist. 
+                    'top_speed' => round((float) $row->day_max_speed, 0),
+                    // No fallback guess — if no speedup alert exists (e.g. speed alert rules
+                    // aren't configured in Navixy for this client), the address genuinely
+                    // doesn't exist.
                     'address'   => $alert?->address ?? 'Location unavailable, refer to system Speed Violation report',
-                    'time'      => $worstTrip
-                        ? Carbon::parse($worstTrip->start_time)->format('Y-m-d')
-                        : '—',
-                    'frequency' => $v['speeding_trips'],
+                    'time'      => $row->day,
+                    'frequency' => (int) $row->day_frequency,
                 ];
             })
+            ->filter()
             ->sortByDesc('top_speed')
             ->values()
             ->toArray();

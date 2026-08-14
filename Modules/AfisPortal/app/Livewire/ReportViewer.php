@@ -36,6 +36,7 @@ class ReportViewer extends Component
 
         $reports = AfisAiReport::where('client_id', $this->clientId)
             ->completed()
+            ->with('tracker')
             ->when($this->typeFilter, fn($q) => $q->where('report_type', $this->typeFilter))
             ->latest()
             ->paginate(15);

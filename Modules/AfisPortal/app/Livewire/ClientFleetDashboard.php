@@ -20,101 +20,55 @@ class ClientFleetDashboard extends Component
     public string $message    = '';
     public bool   $generating = false;
     public bool   $syncing    = false;
+    public string $search     = '';
 
-    public function mount(int $clientId): void
-    {
-        $this->clientId = $clientId;
-        $this->discoverTrackers();
-    }
-
-    /**
-     * On first visit (or after 15 min), use the client's own Navixy session hash
-     * to discover their fleet automatically — no manual linking needed.
-     */
     private function discoverTrackers(): void
-    {
-        $hash = session('navixy_hash');
-        if (!$hash) return;
-
-        // Only re-discover if no trackers exist or last sync > 15 min ago
-        $trackerCount = AfisTracker::where('client_id', $this->clientId)->count();
-        $lastSync     = AfisSyncLog::where('client_id', $this->clientId)
-            ->where('status', 'completed')
-            ->latest('created_at')
-            ->first();
-
-        $needsSync = $trackerCount === 0 ||
-            !$lastSync ||
-            $lastSync->created_at->diffInMinutes(now()) > 15;
-
-        if (!$needsSync) return;
-
-        try {
-            $baseUrl  = rtrim(config('auth-module.navixy_base_url', 'https://api.us.navixy.com/v2'), '/');
-            $response = Http::timeout(30)
-                ->withHeaders(['Content-Type' => 'application/json'])
-                ->post("{$baseUrl}/tracker/list", ['hash' => $hash]);
-
-            $data     = $response->json();
-            $trackers = $data['list'] ?? [];
-
-            if (empty($trackers)) return;
-
-            foreach ($trackers as $t) {
-                $imei = $t['source']['device_id'] ?? null;
-
-                $tracker = AfisTracker::updateOrCreate(
-                    ['navixy_tracker_id' => $t['id']],
-                    [
-                        'client_id'       => $this->clientId,
-                        'navixy_group_id' => \Modules\AfisPipeline\Models\AfisTrackerGroup::where('navixy_group_id', $t['group_id'] ?? 0)->exists()
-                        ? ($t['group_id'] ?? null)
-                        : null,
-                        'label'           => $t['label'] ?? 'Unknown',
-                        'model_name'       => $t['source']['model'] ?? null,
-                        'imei'            => $imei,
-                        'is_active'       => !($t['source']['blocked'] ?? false),
-                        'last_synced_at'  => now(),
-                    ]
-                );
-
-                // Auto-link to ADMM GPS device by IMEI — shows in device listing
-                if ($imei) {
-                    \Modules\AdmmInventory\Models\GpsDevice::where('imei', $imei)
-                        ->where('status', '!=', 'decommissioned')
-                        ->update(['status' => 'installed']);
-                }
-            }
-
-            AfisSyncLog::create([
-                'client_id'       => $this->clientId,
-                'status'          => 'completed',
-                'trackers_synced' => count($trackers),
-                'trips_synced'    => 0,
-                'events_synced'   => 0,
-                'started_at'      => now(),
-                'completed_at'    => now(),
-            ]);
-
-        } catch (\Throwable $e) {
-            Log::warning('ClientFleetDashboard: tracker discovery failed', ['error' => $e->getMessage()]);
-        }
-    }
+{
+    // Tracker discovery is handled exclusively by PipelineSyncService (afis:sync-fleet)
+    // which uses group-based client mapping to correctly assign client_id.
+    // This method previously called tracker/list and overwrote client_id on ALL
+    // instance trackers — causing cross-client contamination. Now removed.
+    return;
+}
 
 
     public function render()
     {
         $client   = Client::findOrFail($this->clientId);
         $trackers = AfisTracker::where('client_id', $this->clientId)
+            ->when($this->search, fn($q) => $q->where('label', 'like', "%{$this->search}%"))
             ->orderBy('label')
             ->get()
             ->map(function ($tracker) {
                 $last30Days = Carbon::now()->subDays(30);
                 $tracker->trip_count  = AfisTrip::where('tracker_id', $tracker->id)->where('start_time', '>=', $last30Days)->count();
-                $tracker->event_count = AfisEvent::where('tracker_id', $tracker->id)->where('occurred_at', '>=', $last30Days)->count();
-                $tracker->max_speed   = AfisTrip::where('tracker_id', $tracker->id)->where('start_time', '>=', $last30Days)->max('max_speed_kmh');
+                $tracker->event_count = \Modules\AfisPipeline\Models\AfisDeviceAlert::where('tracker_id', $tracker->id)->where('occurred_at', '>=', $last30Days)->count();
+                // >=195 km/h is a known GPS/sensor error, excluded fleet-wide —
+                // same rule already applied in every report this session.
+                $tracker->max_speed   = AfisTrip::where('tracker_id', $tracker->id)->where('start_time', '>=', $last30Days)->where('max_speed_kmh', '<', 195)->max('max_speed_kmh');
                 $tracker->total_km    = round(AfisTrip::where('tracker_id', $tracker->id)->where('start_time', '>=', $last30Days)->sum('distance_km'), 1);
                 $tracker->last_report = AfisAiReport::where('tracker_id', $tracker->id)->completed()->latest()->first();
+
+                // ── Risk score (0-10) — ported from AfisIntelligence's
+                // IntelligenceDashboard, with the events component switched
+                // from AfisEvent (confirmed empty, 0 rows fleet-wide) to
+                // AfisDeviceAlert (the real, populated table). Reuses
+                // max_speed/event_count/trip_count already computed above —
+                // same 30-day window, no duplicate queries.
+                $riskScore = 0;
+
+                if ($tracker->max_speed > 120) $riskScore += 3;
+                elseif ($tracker->max_speed > 100) $riskScore += 2;
+                elseif ($tracker->max_speed > 80) $riskScore += 1;
+
+                if ($tracker->event_count > 10) $riskScore += 2;
+                elseif ($tracker->event_count > 5) $riskScore += 1;
+
+                if ($tracker->trip_count > 50) $riskScore += 1;
+
+                $tracker->risk_score = min($riskScore, 10);
+                $tracker->risk_level = $tracker->risk_score >= 5 ? 'high' : ($tracker->risk_score >= 3 ? 'medium' : 'low');
+
                 return $tracker;
             });
 
