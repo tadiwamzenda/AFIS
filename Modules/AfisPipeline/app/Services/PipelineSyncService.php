@@ -121,14 +121,45 @@ $clientGroupIds = AfisTrackerGroup::where('client_id', $client->id)
                 $statusMap[(int)$navixyId] = in_array($conn, ['active', 'idle']) ? 'online' : 'offline';
             }
 
-            foreach ($instanceTrackers as $tracker) {
+            // Scoped to THIS instance's trackers only — the previous
+            // version iterated $instanceTrackers before it was actually
+            // instance-filtered (that filtering only happens later, at
+            // line ~161), so every write-back touched the WHOLE client's
+            // trackers regardless of instance. For single-instance clients
+            // this was invisible (the unfiltered and filtered sets are
+            // identical), but for ZESA (the only multi-instance client) it
+            // meant each instance's sync run correctly wrote its own
+            // trackers' real status, then stamped every OTHER instance's
+            // tracker to 'unknown' in the same loop — confirmed: instance 1
+            // run wipes instance 2 to unknown, instance 2 run immediately
+            // after wipes instance 1 right back, so whichever instance ran
+            // LAST was always the only one showing correctly.
+            $trackersForThisInstance = $instanceTrackers->filter(
+                fn($t) => in_array($t->navixy_group_id, $instanceGroupIds)
+            );
+
+            foreach ($trackersForThisInstance as $tracker) {
                 $newStatus = $statusMap[$tracker->navixy_tracker_id] ?? 'unknown';
                 if ($newStatus !== $tracker->online_status) {
+                    // Stamped at the exact sync cycle the transition was
+                    // observed — this is what afis:check-alerts later reads
+                    // as the offline incident's true start/end time, instead
+                    // of whenever check-alerts itself next happens to run
+                    // (which lags this by up to 15-45 min otherwise).
+                    // Africa/Harare explicitly — app.timezone is UTC, but this
+                    // codebase's established convention (CheckAlertsCommand,
+                    // FleetStateDashboard, etc.) treats offline-duration
+                    // timestamps as Harare-local. Using plain now() here
+                    // would silently introduce a 2-hour skew against every
+                    // other timestamp this feature compares it to.
                     AfisTracker::where('id', $tracker->id)
-                        ->update(['online_status' => $newStatus]);
+                        ->update([
+                            'online_status'             => $newStatus,
+                            'online_status_changed_at'  => Carbon::now('Africa/Harare'),
+                        ]);
                 }
             }
-
+            
             if ($instanceTrackers->isEmpty()) {
                 $log->update([
                     'status'        => 'completed',

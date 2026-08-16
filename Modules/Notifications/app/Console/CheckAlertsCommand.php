@@ -17,31 +17,45 @@ class CheckAlertsCommand extends Command
     protected $signature   = 'afis:check-alerts';
     protected $description = 'Check AFIS system for alert conditions and fire notifications';
 
+    /**
+     * Datetime-cast model attributes get tagged with config('app.timezone')
+     * (UTC) by Eloquent on read, regardless of what timezone the value was
+     * actually written in. Carbon::parse($castAttribute, 'Africa/Harare')
+     * silently IGNORES the timezone argument when given an already-cast
+     * DateTimeInterface — it only applies to raw strings. Bypasses the
+     * cast and parses the raw stored string directly, so the timezone
+     * argument actually takes effect.
+     */
+    private function harareTime($model, string $attribute): ?Carbon
+    {
+        $raw = $model->getRawOriginal($attribute);
+        return $raw ? Carbon::parse($raw, 'Africa/Harare') : null;
+    }
+
     public function handle(NotificationService $notifications): void
     {
         $this->info('Checking AFIS alerts...');
         $fired = 0;
         $now = Carbon::now('Africa/Harare');
 
-    // ── 1. Vehicle offline alerts (from real-time online_status) ─────────
+    // ── 1. Vehicle offline alerts + incident tracking ─────────────────────
     $this->line('  → Checking vehicle offline status...');
 
-    $offlineTrackers = AfisTracker::where('client_id', '!=', 21)
-        ->where('online_status', 'offline')
-        ->get();
+    $allTrackers     = AfisTracker::where('client_id', '!=', 21)->get();
+    $offlineTrackers = $allTrackers->where('online_status', 'offline');
+    $onlineTrackers  = $allTrackers->where('online_status', 'online');
 
     $this->line("    → Found {$offlineTrackers->count()} offline trackers");
 
-    // Load all clients at once
     $clientIds = $offlineTrackers->pluck('client_id')->unique()->toArray();
     $clients   = Client::whereIn('id', $clientIds)->get()->keyBy('id');
+    $today     = $now->toDateString();
 
-    // Load today's already-fired notifications
-    $today = $now->toDateString();
-    $alreadyFired = AfisNotification::whereIn('type', [
+    // Warning/Severe still fire once per day each — unchanged behaviour,
+    // just now sourced from the incident's accurate went_offline_at.
+    $alreadyFiredTiered = AfisNotification::whereIn('type', [
             'vehicle.immediately_offline',
             'vehicle.extended_offline',
-            'vehicle.critically_offline'
         ])
         ->whereDate('created_at', $today)
         ->get()
@@ -50,72 +64,173 @@ class CheckAlertsCommand extends Command
         ->flip()
         ->toArray();
 
-    // Get last offline event time per tracker for duration calculation
-    $lastOfflineEvents = \Illuminate\Support\Facades\DB::table('afis_device_alerts as a')
-        ->join(\Illuminate\Support\Facades\DB::raw(
-            '(SELECT tracker_id, MAX(occurred_at) as max_time
-            FROM afis_device_alerts
-            WHERE event_type = "offline"
-            GROUP BY tracker_id) as b'
-        ), function($join) {
-            $join->on('a.tracker_id', '=', 'b.tracker_id')
-                ->on('a.occurred_at', '=', 'b.max_time');
-        })
-        ->whereIn('a.tracker_id', $offlineTrackers->pluck('id')->toArray())
-        ->select('a.tracker_id', 'a.occurred_at')
-        ->get()
-        ->keyBy('tracker_id');
-
     foreach ($offlineTrackers as $tracker) {
-        if (isset($alreadyFired[$tracker->id])) continue;
+        $incident = \Modules\AfisPipeline\Models\AfisOfflineIncident::where('tracker_id', $tracker->id)
+            ->open()
+            ->first();
 
-        $client = $clients->get($tracker->client_id);
+        // Stale-incident check: if the tracker's own status has changed
+        // MORE RECENTLY than this incident's recorded start, a full
+        // online→offline cycle happened that we never observed (both
+        // transitions fell between check-alerts runs — the tracker was
+        // online again and offline again before this run ever caught it
+        // "online" to close the original incident). The incident is stale
+        // regardless of current status; close it using the tracker's own
+        // timestamp and let a fresh one open below.
+        if ($incident) {
+            $statusChangedAt = $this->harareTime($tracker, 'online_status_changed_at');
+            $incidentStart   = $this->harareTime($incident, 'went_offline_at');
 
-        // Calculate duration from last offline event
-        $lastEvent    = $lastOfflineEvents->get($tracker->id);
-        $offlineSince = $lastEvent
-            ? Carbon::parse($lastEvent->occurred_at, 'Africa/Harare')
-            : Carbon::now('Africa/Harare')->subHour(); // fallback
+            if ($statusChangedAt && $incidentStart && $statusChangedAt->gt($incidentStart)) {
+                $incident->update(['came_online_at' => $statusChangedAt]);
 
-        $offlineHours = (int) abs($now->diffInHours($offlineSince));
-        $offlineDays  = (int) abs($now->diffInDays($offlineSince));
+                if ($incident->notification_id) {
+                    AfisNotification::where('id', $incident->notification_id)
+                        ->update(['status' => 'attended', 'status_changed_at' => $now]);
+                }
 
-        // Determine severity
-        if ($offlineDays >= 7) {
-            $severity = 'critical';
-            $type     = 'vehicle.critically_offline';
-        } elseif ($offlineHours >= 24) {
-            $severity = 'severe';
-            $type     = 'vehicle.extended_offline';
-        } else {
-            $severity = 'warning';
-            $type     = 'vehicle.immediately_offline';
+                $incident = null; // force a fresh incident to open below
+            }
         }
 
-        $duration = $offlineDays >= 1
+        if (!$incident) {
+            $wentOfflineAt = $tracker->online_status_changed_at;
+
+            if (!$wentOfflineAt) {
+                // No precise transition timestamp (tracker was already
+                // offline before this feature existed). Best available
+                // historical proxy: the last recorded 'offline' alert
+                // event — imperfect for determining CURRENT status
+                // (confirmed 40% unreliable earlier today), but for a
+                // genuinely past event its own timestamp is a reasonable
+                // approximation, far better than "just now" for a vehicle
+                // that's actually been offline for weeks.
+                $lastOfflineAlert = \Modules\AfisPipeline\Models\AfisDeviceAlert::where('tracker_id', $tracker->id)
+                    ->where('event_type', 'offline')
+                    ->orderByDesc('occurred_at')
+                    ->first();
+
+                $wentOfflineAt = $lastOfflineAlert
+                    ? Carbon::parse($lastOfflineAlert->occurred_at, 'Africa/Harare')
+                    : $now; // last resort — genuinely no historical data exists
+            }
+
+            $incident = \Modules\AfisPipeline\Models\AfisOfflineIncident::create([
+                'tracker_id'      => $tracker->id,
+                'client_id'       => $tracker->client_id,
+                'went_offline_at' => $wentOfflineAt,
+            ]);
+        } else {
+            // Self-heal: an existing open incident may have been created
+            // before this historical-fallback logic existed (stamped
+            // 'now()' instead of the real offline time). If a real offline
+            // alert on record is EARLIER than what this incident currently
+            // shows, correct it. Safe to run on every check-alerts cycle —
+            // this only ever moves the timestamp earlier/more accurate,
+            // never later, so there's no risk of drifting a correct value.
+            $lastOfflineAlert = \Modules\AfisPipeline\Models\AfisDeviceAlert::where('tracker_id', $tracker->id)
+                ->where('event_type', 'offline')
+                ->orderByDesc('occurred_at')
+                ->first();
+
+            if ($lastOfflineAlert) {
+                $alertTime = Carbon::parse($lastOfflineAlert->occurred_at, 'Africa/Harare');
+                if ($alertTime->lt($incident->went_offline_at)) {
+                    $incident->update(['went_offline_at' => $alertTime]);
+                }
+            }
+        }
+
+        $client       = $clients->get($tracker->client_id);
+        $offlineSince = Carbon::parse($incident->went_offline_at, 'Africa/Harare');
+        $offlineHours = (int) abs($now->diffInHours($offlineSince));
+        $offlineDays  = (int) abs($now->diffInDays($offlineSince));
+        $duration     = $offlineDays >= 1
             ? "{$offlineDays}d " . ($offlineHours % 24) . "h"
             : "{$offlineHours}h";
 
-        $notifications->record(
-            type:     $type,
-            title:    "Vehicle offline — {$tracker->label}",
-            message:  "{$tracker->label} ({$client?->name}) offline for {$duration}.",
-            module:   'AfisPipeline',
-            severity: $severity,
-            data:     [
-                'tracker_id'    => $tracker->id,
-                'tracker_label' => $tracker->label,
-                'client_id'     => $tracker->client_id,
-                'client'        => $client?->name,
-                'offline_since' => $offlineSince->toDateTimeString(),
-                'offline_hours' => $offlineHours,
-                'offline_days'  => $offlineDays,
-            ],
-        );
-        $fired++;
+        // Warning / Severe — same fire-once-per-day rule and labels as
+        // before, just accurate duration now.
+        if (!isset($alreadyFiredTiered[$tracker->id])) {
+            $severity = $offlineHours >= 24 ? 'severe' : 'warning';
+            $type     = $offlineHours >= 24 ? 'vehicle.extended_offline' : 'vehicle.immediately_offline';
+
+            $notifications->record(
+                type:     $type,
+                title:    "Vehicle offline — {$tracker->label}",
+                message:  "{$tracker->label} ({$client?->name}) offline for {$duration}.",
+                module:   'AfisPipeline',
+                severity: $severity,
+                data:     [
+                    'tracker_id'    => $tracker->id,
+                    'tracker_label' => $tracker->label,
+                    'client_id'     => $tracker->client_id,
+                    'client'        => $client?->name,
+                    'offline_since' => $offlineSince->toDateTimeString(),
+                    'offline_hours' => $offlineHours,
+                    'offline_days'  => $offlineDays,
+                ],
+            );
+            $fired++;
+        }
+
+        // Critical — fires ONCE per incident (not daily), pending/attended
+        // lifecycle, and ONLY once a human has marked the incident
+        // "Functional". Time passing alone (7 days, 30 days, however long)
+        // never fires this on its own — it requires review first.
+        if ($offlineDays >= 7 && $incident->comment === 'Functional' && !$incident->notification_id) {
+            $criticalNotification = $notifications->record(
+                type:     'vehicle.critically_offline',
+                title:    "Vehicle offline — {$tracker->label}",
+                message:  "{$tracker->label} ({$client?->name}) offline for {$duration}. Marked Functional — requires attention.",
+                module:   'AfisPipeline',
+                severity: 'critical',
+                data:     [
+                    'tracker_id'    => $tracker->id,
+                    'tracker_label' => $tracker->label,
+                    'client_id'     => $tracker->client_id,
+                    'client'        => $client?->name,
+                    'offline_since' => $offlineSince->toDateTimeString(),
+                    'offline_hours' => $offlineHours,
+                    'offline_days'  => $offlineDays,
+                    'incident_id'   => $incident->id,
+                ],
+            );
+
+            $criticalNotification->update(['status' => 'pending', 'status_changed_at' => $now]);
+            $incident->update(['notification_id' => $criticalNotification->id]);
+            $fired++;
+            $this->line("    ✓ critical (pending): {$tracker->label} — offline {$duration}, marked Functional");
+        }
     }
 
-    $this->line("    → Fired {$fired} offline notifications");
+    // ── 1b. Close incidents for trackers back online; mark any linked
+    // pending Critical notification as attended. This is what makes the
+    // notification lifecycle and the States dashboard synchronous — both
+    // read the same incident row, closed by the same event.
+    $closedCount = 0;
+    foreach ($onlineTrackers as $tracker) {
+        $incident = \Modules\AfisPipeline\Models\AfisOfflineIncident::where('tracker_id', $tracker->id)
+            ->open()
+            ->first();
+
+        if (!$incident) continue;
+
+        $incident->update(['came_online_at' => $tracker->online_status_changed_at ?? $now]);
+
+        if ($incident->notification_id) {
+            AfisNotification::where('id', $incident->notification_id)
+                ->update(['status' => 'attended', 'status_changed_at' => $now]);
+        }
+
+        $closedCount++;
+    }
+
+    if ($closedCount > 0) {
+        $this->line("    → Closed {$closedCount} offline incident(s) — vehicle(s) back online");
+    }
+
+    $this->line("    → Fired {$fired} offline-related notifications this run");
 
         // ── 2. Fuel drain alerts ──────────────────────────────────────────────
         $this->line('  → Checking fuel drain events...');

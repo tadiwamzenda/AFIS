@@ -13,7 +13,7 @@
                 <span class="w-7 h-7 rounded-lg bg-indigo-500/15 flex items-center justify-center">
                     <svg class="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2a4 4 0 118 0v2M5 17h14a2 2 0 002-2v-2a2 2 0 00-2-2H5a2 2 0 00-2 2v2a2 2 0 002 2z" /></svg>
                 </span>
-                <p class="text-xs font-large text-slate-400 uppercase tracking-wider">Fleet Vehicles</p>
+                <p class="text-xs font-medium text-slate-400 uppercase tracking-wider">Vehicles</p>
             </div>
             <p class="text-3xl font-bold text-white">{{ $stats['total_vehicles'] }}</p>
             <p class="mt-2 text-xs text-slate-400">{{ $stats['active_vehicles'] }} active</p>
@@ -43,7 +43,7 @@
     {{-- Vehicle list --}}
     <div class="bg-white rounded-xl border border-gray-200">
         <div class="px-5 py-4 border-b border-gray-100 flex items-center gap-3">
-            <h3 class="text-l font-semibold text-gray-800 flex-1">Fleet Vehicle List</h3>
+            <h3 class="text-sm font-semibold text-gray-800 flex-1">Vehicles</h3>
             <input wire:model.live.debounce.300ms="search" type="text"
                 placeholder="Search vehicle..."
                 class="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-400 w-44">
@@ -52,16 +52,15 @@
             @forelse($trackers as $tracker)
             @php
                 $riskDotColor   = match($tracker->risk_level) { 'high' => 'bg-red-500', 'medium' => 'bg-amber-400', default => 'bg-green-400' };
-                $riskBadgeClass = match($tracker->risk_level) { 'high' => 'bg-red-100 text-red-700', 'medium' => 'bg-amber-100 text-amber-700', default => 'bg-green-100 text-green-700' };
+                $riskBadgeClass = match($tracker->risk_level) { 'high' => 'bg-red-100 text-red-700', 'medium' => 'bg-amber-50 border border-amber-200 text-amber-700', default => 'bg-green-100 text-green-700' };
                 $riskScoreText  = match($tracker->risk_level) { 'high' => 'text-red-600', 'medium' => 'text-amber-600', default => 'text-green-600' };
             @endphp
             <div class="px-5 py-4 flex items-center gap-4">
-                <div class="w-2 h-2 rounded-full flex-shrink-0 {{ $riskDotColor }}"></div>
                 <div class="flex-1 min-w-0">
-                    <p class="text-sm font-medium text-gray-800">{{ $tracker->label }} @if($tracker->last_report)
-                        <span class="text-l text-brand-600 font-medium"> - Report available</span>
-                    @endif</p>
-                    
+                    <p class="text-sm font-medium text-gray-800">{{ $tracker->label }}</p>
+                    @if($tracker->last_report)
+                        <span class="text-xs text-green-600 font-medium">Report available</span>
+                    @endif
                     <p class="text-xs text-gray-400 mt-0.5">
                         {{ $tracker->trip_count }} trips ·
                         {{ $tracker->total_km }} km ·
@@ -74,9 +73,10 @@
                 </div>
                 <div class="flex items-center gap-3">
                     
+                    
                     <div class="text-right">
                         <p class="text-sm font-bold {{ $riskScoreText }}">{{ $tracker->risk_score }}/10</p>
-                        <p class="text-[8px] text-gray-400">risk score</p>
+                        <p class="text-[10px] text-gray-400">risk score</p>
                     </div>
                     <span class="text-xs font-medium px-2 py-0.5 rounded-full {{ $riskBadgeClass }}">
                         {{ ucfirst($tracker->risk_level) }}

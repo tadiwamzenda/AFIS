@@ -6,25 +6,19 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use Illuminate\Support\Facades\Auth;
 use Modules\AdmmInventory\Models\Client;
-use Modules\AfisEngine\Models\AfisAiReport;
 use Modules\AfisPipeline\Models\AfisTracker;
 
 class IntelligenceController extends Controller
 {
     // ─── Admin ───────────────────────────────────────────────────────────────
 
-    public function index()
+   public function index()
     {
         $clients = Client::active()
             ->orderBy('name')
             ->get()
             ->map(function ($client) {
                 $client->tracker_count = AfisTracker::where('client_id', $client->id)->count();
-                $client->last_intelligence_report = AfisAiReport::where('client_id', $client->id)
-                    ->whereIn('report_type', ['fleet_intelligence', 'predictive_intelligence'])
-                    ->completed()
-                    ->latest()
-                    ->first();
                 return $client;
             });
 
@@ -37,13 +31,7 @@ class IntelligenceController extends Controller
         return view('afisintelligence::admin.dashboard', compact('client'));
     }
 
-    public function archive(int $clientId)
-    {
-        $client = Client::findOrFail($clientId);
-        return view('afisintelligence::admin.archive', compact('client'));
-    }
-
-    // ─── Client portal ────────────────────────────────────────────────────────
+   // ─── Client portal ────────────────────────────────────────────────────────
 
     public function clientDashboard()
     {

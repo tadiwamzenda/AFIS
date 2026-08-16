@@ -7,7 +7,7 @@ use Modules\AfisIntelligence\Http\Controllers\IntelligenceController;
 Route::middleware('auth')->prefix('admin/afis/intelligence')->name('admin.afis.intelligence.')->group(function () {
     Route::get('/',                  [IntelligenceController::class, 'index'])->name('index');
     Route::get('/{clientId}',        [IntelligenceController::class, 'dashboard'])->name('dashboard');
-    Route::get('/{clientId}/archive',[IntelligenceController::class, 'archive'])->name('archive');
+
 });
 
 // Client portal routes

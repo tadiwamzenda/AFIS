@@ -314,28 +314,65 @@ private function fetchAlertsChunk(array $trackerIds, Carbon $from, Carbon $to, i
         $allStates = [];
 
         foreach (array_chunk($navixyTrackerIds, 1000) as $chunk) {
-            try {
-                $hash     = $this->auth->getHash($instance);
-                $response = Http::timeout(60)
-                    ->withHeaders(['Content-Type' => 'application/json'])
-                    ->post("{$this->baseUrl}/tracker/get_states", [
-                        'hash'            => $hash,
-                        'trackers'        => $chunk,
-                        'allow_not_exist' => true,
-                        'list_blocked'    => true,
-                    ]);
-
-                $data = $response->json();
-                if (!empty($data['success'])) {
-                    $allStates = $allStates + ($data['states'] ?? []);
-                }
-                usleep(300000);
-            } catch (\Throwable $e) {
-                Log::warning("NavixyDataService: getTrackerStates failed", ['error' => $e->getMessage()]);
-            }
+            $allStates = $allStates + $this->fetchTrackerStatesChunk($chunk, $instance);
+            usleep(300000);
         }
 
         return $allStates;
+    }
+
+    /**
+     * Same binary-split retry pattern already used by getAlerts() and
+     * getDailyMileage() — extended here after confirmed evidence (repeated
+     * "cURL error 28: Connection timed out after ~10s" in production logs)
+     * that large single-shot chunks (up to 1000 trackers) can time out
+     * before completing. Previously any failure here just silently dropped
+     * the ENTIRE chunk with no retry, leaving every tracker in it stuck at
+     * online_status='unknown' forever (confirmed: ZESA ZPC's trackers,
+     * isolated single-tracker calls succeed instantly and cleanly).
+     */
+    private function fetchTrackerStatesChunk(array $navixyTrackerIds, int $instance, int $depth = 0): array
+    {
+        if (empty($navixyTrackerIds) || $depth > 7) return [];
+
+        try {
+            $hash     = $this->auth->getHash($instance);
+            $response = Http::timeout(60)
+                ->withHeaders(['Content-Type' => 'application/json'])
+                ->post("{$this->baseUrl}/tracker/get_states", [
+                    'hash'            => $hash,
+                    'trackers'        => $navixyTrackerIds,
+                    'allow_not_exist' => true,
+                    'list_blocked'    => true,
+                ]);
+
+            $data = $response->json();
+            if (!empty($data['success'])) {
+                return $data['states'] ?? [];
+            }
+
+            Log::warning("NavixyDataService: getTrackerStates non-success response", ['response' => $data]);
+            return [];
+
+        } catch (\Throwable $e) {
+            // A timeout on a large chunk doesn't tell us WHICH tracker(s)
+            // caused it — split in half and retry each independently. A
+            // smaller chunk is both less likely to time out again and, if
+            // it does, narrows the problem further on the next recursion.
+            if (count($navixyTrackerIds) > 1) {
+                $mid   = (int) ceil(count($navixyTrackerIds) / 2);
+                $left  = array_slice($navixyTrackerIds, 0, $mid);
+                $right = array_slice($navixyTrackerIds, $mid);
+
+                $leftStates  = $this->fetchTrackerStatesChunk($left,  $instance, $depth + 1);
+                $rightStates = $this->fetchTrackerStatesChunk($right, $instance, $depth + 1);
+
+                return $leftStates + $rightStates;
+            }
+
+            Log::warning("NavixyDataService: getTrackerStates failed", ['error' => $e->getMessage()]);
+            return [];
+        }
     }
     // ─── (Engine Hours)) ───────────────────────────────────
 
