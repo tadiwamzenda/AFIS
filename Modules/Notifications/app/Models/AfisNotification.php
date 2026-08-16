@@ -15,13 +15,15 @@ class AfisNotification extends Model
         'type', 'title', 'message', 'severity', 'module',
         'notifiable_type', 'notifiable_id',
         'user_id', 'data', 'read_at', 'email_sent',
+        'status', 'status_changed_at',
     ];
 
     protected $casts = [
-        'data'       => 'array',
-        'read_at'    => 'datetime',
-        'created_at' => 'datetime',
-        'email_sent' => 'boolean',
+        'data'              => 'array',
+        'read_at'           => 'datetime',
+        'created_at'        => 'datetime',
+        'status_changed_at' => 'datetime',
+        'email_sent'        => 'boolean',
     ];
 
     public function user(): BelongsTo

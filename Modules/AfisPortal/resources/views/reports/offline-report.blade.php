@@ -101,7 +101,7 @@
 <div class="report-title">
     <h1>{{ $client->name }} — Vehicle Offline Incidents Report</h1>
     <div class="sub">
-        {{ $from->format('d M Y') }} to {{ $to->format('d M Y') }} · Generated {{ now()->format('d M Y H:i') }}
+        {{ $from->format('d M Y') }} to {{ $to->format('d M Y') }} · Generated {{ \Carbon\Carbon::now('Africa/Harare')->format('d M Y H:i') }}
     </div>
 </div>
 
