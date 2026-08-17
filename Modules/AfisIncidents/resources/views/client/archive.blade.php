@@ -8,5 +8,5 @@
     </a>
 @endsection
 @section('content')
-    <livewire:afis-incident-archive :client-id="$client->id" />
+    <livewire:afis-incident-archive :client-id="$client->id" :is-admin="false" />
 @endsection

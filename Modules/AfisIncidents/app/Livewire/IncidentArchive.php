@@ -11,14 +11,16 @@ class IncidentArchive extends Component
     use WithPagination;
 
     public int    $clientId;
+    public bool   $isAdmin        = true;
     public string $search         = '';
     public string $severityFilter = '';
     public string $statusFilter   = '';
     public ?int   $selectedId     = null;
 
-    public function mount(int $clientId): void
+    public function mount(int $clientId, bool $isAdmin = true): void
     {
         $this->clientId = $clientId;
+        $this->isAdmin  = $isAdmin;
     }
 
     public function selectIncident(int $id): void
@@ -53,11 +55,16 @@ class IncidentArchive extends Component
             }))
             ->when($this->severityFilter, fn($q) => $q->where('severity', $this->severityFilter))
             ->when($this->statusFilter,   fn($q) => $q->where('status',   $this->statusFilter))
+            // Clients only see incidents THEY personally logged — not other
+            // users at the same client company. Admin/Staff unrestricted.
+            ->when(!$this->isAdmin, fn($q) => $q->where('logged_by', \Illuminate\Support\Facades\Auth::id()))
             ->latest('created_at')
             ->paginate(15);
 
         $selected = $this->selectedId
-            ? AfisIncident::with(['tracker', 'aiReport', 'loggedBy'])->find($this->selectedId)
+            ? AfisIncident::with(['tracker', 'aiReport', 'loggedBy'])
+                ->when(!$this->isAdmin, fn($q) => $q->where('logged_by', \Illuminate\Support\Facades\Auth::id()))
+                ->find($this->selectedId)
             : null;
 
         return view('afisincidents::livewire.incident-archive', compact('incidents', 'selected'));

@@ -202,6 +202,10 @@ class ReportGenerator extends Component
 
         $recentReports = \Modules\AfisPortal\Models\AfisGeneratedReport::with('client', 'generatedBy')
             ->when($this->clientId, fn($q) => $q->where('client_id', $this->clientId))
+            // Clients only see reports THEY personally generated — not other
+            // users at the same client company. Admin/Staff are unrestricted,
+            // same as before.
+            ->when(!$this->isAdmin, fn($q) => $q->where('generated_by', \Illuminate\Support\Facades\Auth::id()))
             ->latest()
             ->limit(20)
             ->get();
