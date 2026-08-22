@@ -36,7 +36,9 @@ class NavixyAuthService
 
         $data = $response->json();
 
-        \Illuminate\Support\Facades\Log::info('Navixy raw auth response', ['data' => $data]);
+        Log::info('Navixy raw auth response', [
+            'data' => array_merge($data, isset($data['hash']) ? ['hash' => '[REDACTED]'] : []),
+        ]);
 
         if (empty($data['success'])) {
             $code = $data['status']['code'] ?? 'unknown';

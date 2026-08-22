@@ -51,10 +51,17 @@ return [
     */
 
     'channels' => [
-
         'stack' => [
             'driver' => 'stack',
-            'channels' => explode(',', (string) env('LOG_STACK', 'single')),
+            // Changed default from 'single' (one file, grows forever) to
+            // 'daily' (auto-rotates, auto-prunes after LOG_DAILY_DAYS —
+            // already defaulted to 14 below). Deliberately NOT lowering
+            // the log level below 'debug' right now — verbose logging has
+            // been directly responsible for diagnosing most of today's
+            // real bugs (timezone skew, silent timeouts, memory
+            // exhaustion). Worth revisiting log level specifically as part
+            // of the pre-production checklist, not now.
+            'channels' => explode(',', (string) env('LOG_STACK', 'daily')),
             'ignore_exceptions' => false,
         ],
 
@@ -63,6 +70,7 @@ return [
             'path' => storage_path('logs/laravel.log'),
             'level' => env('LOG_LEVEL', 'debug'),
             'replace_placeholders' => true,
+            'processors' => [\App\Logging\RedactSensitiveDataProcessor::class],
         ],
 
         'daily' => [
@@ -71,6 +79,7 @@ return [
             'level' => env('LOG_LEVEL', 'debug'),
             'days' => env('LOG_DAILY_DAYS', 14),
             'replace_placeholders' => true,
+            'processors' => [\App\Logging\RedactSensitiveDataProcessor::class],
         ],
 
         'slack' => [
