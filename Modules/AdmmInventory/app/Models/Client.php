@@ -11,7 +11,8 @@ class Client extends Model
     'name',
     'navixy_account_id',
     'navixy_instance',
-    'navixy_instance_secondary',  // ADD THIS
+    'navixy_instance_secondary',
+    'navixy_api_key',
     'navixy_security_group_id',
     'navixy_group_prefix',
     'contact_person',

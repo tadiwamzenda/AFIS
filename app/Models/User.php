@@ -18,11 +18,12 @@ class User extends Authenticatable
     const CLIENT_ROLES = [self::ROLE_CLIENT];
 
     protected $fillable = [
-        'name', 'email', 'navixy_user_id', 'navixy_account_id',
-        'navixy_instance', 'navixy_security_group_id',
-        'role', 'is_active',
+    'name', 'email', 'navixy_user_id', 'navixy_account_id',
+    'navixy_instance', 'navixy_security_group_id',
+    'client_id',
+    'role', 'is_active',
     ];
-
+    
     protected $hidden = ['remember_token'];
 
     protected $casts = [

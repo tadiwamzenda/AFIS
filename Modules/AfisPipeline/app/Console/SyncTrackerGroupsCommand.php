@@ -5,23 +5,25 @@ namespace Modules\AfisPipeline\Console;
 use Illuminate\Console\Command;
 use Modules\AdmmInventory\Models\Client;
 use Modules\AfisPipeline\Models\AfisTrackerGroup;
-use Modules\AfisPipeline\Services\NavixyDataService;
-use Illuminate\Support\Facades\Log;
 use Modules\AfisPipeline\Models\AfisTracker;
+use Modules\AfisPipeline\Services\NavixyDataService;
+use Modules\AfisPipeline\Services\PipelineAuthService;
+use Illuminate\Support\Facades\Log;
 
 class SyncTrackerGroupsCommand extends Command
 {
     protected $signature   = 'afis:sync-groups';
     protected $description = 'Sync tracker groups from both Navixy instances';
 
-    public function handle(NavixyDataService $navixy): void
+    public function handle(NavixyDataService $navixy, PipelineAuthService $auth): void
     {
         $this->info('Syncing tracker groups from both instances...');
 
         $totalSynced = 0;
 
+        // ── Step 1: Sync groups from Bantu Track master accounts (instances 1 & 2) ──
         foreach ([1, 2] as $instance) {
-            $this->line("  → Instance {$instance}...");
+            $this->line("  → Instance {$instance} (master account)...");
 
             try {
                 $groups = $navixy->getTrackerGroups($instance);
@@ -54,23 +56,23 @@ class SyncTrackerGroupsCommand extends Command
 
                     $existing = AfisTrackerGroup::where('navixy_group_id', $group['id'])->first();
 
-if ($existing) {
-    $existing->update([
-        'navixy_instance' => $instance,
-        'title'           => $group['title'],
-        'color'           => $group['color'] ?? null,
-        // Only update client_id if we found a match OR if it was never set
-        'client_id'       => $clientId ?? $existing->client_id ?? 21,
-    ]);
-} else {
-    AfisTrackerGroup::create([
-        'navixy_group_id' => $group['id'],
-        'navixy_instance' => $instance,
-        'title'           => $group['title'],
-        'color'           => $group['color'] ?? null,
-        'client_id'       => $clientId ?? 21, // New unmapped groups go to MISCELLANEOUS
-    ]);
-}
+                    if ($existing) {
+                        $existing->update([
+                            'navixy_instance' => $instance,
+                            'title'           => $group['title'],
+                            'color'           => $group['color'] ?? null,
+                            // Only update client_id if we found a match OR if it was never set
+                            'client_id'       => $clientId ?? $existing->client_id ?? 21,
+                        ]);
+                    } else {
+                        AfisTrackerGroup::create([
+                            'navixy_group_id' => $group['id'],
+                            'navixy_instance' => $instance,
+                            'title'           => $group['title'],
+                            'color'           => $group['color'] ?? null,
+                            'client_id'       => $clientId ?? 21,
+                        ]);
+                    }
 
                     if ($clientId) {
                         $this->line("  ✓ Mapped: {$group['title']} → client #{$clientId}");
@@ -84,18 +86,114 @@ if ($existing) {
             }
         }
 
-        // ── Clean up ghost trackers (removed from Navixy but still in AFIS) ──
-$this->line("  → Cleaning up ghost trackers...");
+        // ── Step 2: Sync groups for independent clients (own Navixy accounts) ──
+        $this->line("  → Syncing groups for independent clients...");
 
-$inst1Ids = collect($navixy->getAllTrackers(1))->pluck('id')->toArray();
-$inst2Ids = collect($navixy->getAllTrackers(2))->pluck('id')->toArray();
-$allNavixyIds = array_merge($inst1Ids, $inst2Ids);
+        $independentClients = Client::where('is_active', true)
+            ->whereNotNull('navixy_api_key')
+            ->where('id', '!=', 21)
+            ->get();
+
+        $independentNavixyIds = [];
+
+        foreach ($independentClients as $client) {
+            $this->line("    → {$client->name} (instance {$client->navixy_instance})...");
+
+            try {
+                // Set client API key so all getHash() calls use it
+                $auth->setClientApiKey($client->navixy_api_key);
+
+                // Get groups for this independent account
+                $groups = $navixy->getTrackerGroups($client->navixy_instance);
+
+                foreach ($groups as $group) {
+                    // Normalize title for fuzzy matching (strips spaces, uppercases)
+                    // Handles "REF HEAD OFFICE" vs "REF HEADOFFICE" migration discrepancies
+                    $normalizedNew = strtoupper(preg_replace('/\s+/', '', trim($group['title'])));
+
+                    // Check if group with similar title already exists for this client
+                    $existingByTitle = AfisTrackerGroup::where('client_id', $client->id)
+                        ->get()
+                        ->first(function ($g) use ($normalizedNew) {
+                            $normalizedExisting = strtoupper(preg_replace('/\s+/', '', trim($g->title)));
+                            return $normalizedExisting === $normalizedNew;
+                        });
+
+                    if ($existingByTitle) {
+                    // Check if independent account's group ID already exists as a separate entry
+                    $alreadyExists = AfisTrackerGroup::where('navixy_group_id', $group['id'])
+                        ->where('id', '!=', $existingByTitle->id)
+                        ->first();
+
+                    if ($alreadyExists) {
+                        // Independent account version already exists — delete the old master account entry
+                        // and keep the independent account entry (which has the correct group ID)
+                        $existingByTitle->delete();
+                        // Update the existing independent entry to ensure client mapping is correct
+                        $alreadyExists->update([
+                            'client_id'       => $client->id,
+                            'navixy_instance' => $client->navixy_instance,
+                            'color'           => $group['color'] ?? null,
+                        ]);
+                        $this->line("      ↻ Cleaned: {$group['title']} (removed old master account entry)");
+                    } else {
+                        // Safe to update — no duplicate navixy_group_id
+                        $existingByTitle->update([
+                            'navixy_group_id' => $group['id'],
+                            'navixy_instance' => $client->navixy_instance,
+                            'title'           => $group['title'],
+                            'color'           => $group['color'] ?? null,
+                        ]);
+                        $this->line("      ↻ Merged: {$group['title']}");
+                    }
+                    } else {
+                        // Genuinely new group
+                        AfisTrackerGroup::updateOrCreate(
+                            ['navixy_group_id' => $group['id']],
+                            [
+                                'client_id'       => $client->id,
+                                'title'           => $group['title'],
+                                'color'           => $group['color'] ?? null,
+                                'navixy_instance' => $client->navixy_instance,
+                            ]
+                        );
+                        $this->line("      ✓ New: {$group['title']}");
+                    }
+                }
+
+                // Also get all trackers from this account for ghost cleanup
+                $accountTrackers = $navixy->getAllTrackers($client->navixy_instance);
+                foreach ($accountTrackers as $t) {
+                    $independentNavixyIds[] = $t['id'];
+                }
+
+                $this->line("      ✓ " . count($groups) . " group(s) synced");
+                $totalSynced += count($groups);
+
+            } catch (\Throwable $e) {
+                $this->warn("      ✗ {$client->name} failed: " . $e->getMessage());
+                Log::warning("afis:sync-groups: independent client {$client->name} failed", ['error' => $e->getMessage()]);
+            } finally {
+                // Always clear override after each client
+                $auth->setClientApiKey(null);
+            }
+        }
+
+        // ── Step 3: Ghost tracker cleanup ─────────────────────────────────────
+        $this->line("  → Cleaning up ghost trackers...");
+
+        // Get all tracker IDs from master accounts
+        $inst1Ids = collect($navixy->getAllTrackers(1))->pluck('id')->toArray();
+        $inst2Ids = collect($navixy->getAllTrackers(2))->pluck('id')->toArray();
+
+        // Combine with independent client tracker IDs
+        $allNavixyIds = array_merge($inst1Ids, $inst2Ids, $independentNavixyIds);
 
         if (!empty($allNavixyIds)) {
             $ghostCount = AfisTracker::whereNotIn('navixy_tracker_id', $allNavixyIds)
                 ->where('client_id', '!=', 21)
                 ->update(['client_id' => 21]);
-            
+
             if ($ghostCount > 0) {
                 $this->line("  → Moved {$ghostCount} ghost tracker(s) to MISCELLANEOUS");
                 Log::info("afis:sync-groups: moved {$ghostCount} ghost trackers to MISCELLANEOUS");
@@ -104,8 +202,9 @@ $allNavixyIds = array_merge($inst1Ids, $inst2Ids);
             }
         }
 
-        // Also move ungrouped trackers (navixy_group_id = NULL) to MISCELLANEOUS
-        // These were created by discoverTrackers() with no group mapping
+        // ── Step 4: Ungrouped tracker cleanup ─────────────────────────────────
+        // Trackers with navixy_group_id = NULL go to MISCELLANEOUS
+        // (created by old discoverTrackers() with no group mapping)
         $ungroupedCount = AfisTracker::whereNull('navixy_group_id')
             ->where('client_id', '!=', 21)
             ->update(['client_id' => 21]);
@@ -114,6 +213,53 @@ $allNavixyIds = array_merge($inst1Ids, $inst2Ids);
             $this->line("  → Moved {$ungroupedCount} ungrouped tracker(s) to MISCELLANEOUS");
             Log::info("afis:sync-groups: moved {$ungroupedCount} ungrouped trackers to MISCELLANEOUS");
         }
+
+                // ── Step 5: Repair misassigned trackers ───────────────────────────────
+        // Finds trackers whose navixy_group_id belongs to a DIFFERENT client
+        // than their current client_id. This corrects data corruption from
+        // group merges, account migrations, or manual changes.
+        // Runs daily (not every 15-min sync) to avoid performance overhead.
+        $this->line("  → Repairing misassigned trackers...");
+
+        $repaired = 0;
+
+        // Load all group → client mappings
+        $groupClientMap = AfisTrackerGroup::pluck('client_id', 'navixy_group_id');
+
+        // Find trackers where group belongs to different client
+        AfisTracker::whereNotNull('navixy_group_id')
+            ->where('client_id', '!=', 21)
+            ->chunk(200, function ($trackers) use ($groupClientMap, &$repaired) {
+                foreach ($trackers as $tracker) {
+                    $correctClientId = $groupClientMap[$tracker->navixy_group_id] ?? null;
+
+                    // Skip if group not mapped (unmapped groups → leave as is)
+                    if (!$correctClientId) continue;
+
+                    // Skip if already correctly assigned
+                    if ($correctClientId === $tracker->client_id) continue;
+
+                    // Skip if correct client is MISCELLANEOUS
+                    if ($correctClientId === 21) continue;
+
+                    // Reassign to correct client
+                    $tracker->update(['client_id' => $correctClientId]);
+                    $repaired++;
+
+                    Log::info("afis:sync-groups: reassigned tracker {$tracker->label} " .
+                        "from client {$tracker->client_id} to {$correctClientId} " .
+                        "(group {$tracker->navixy_group_id})");
+                }
+            });
+
+        if ($repaired > 0) {
+            $this->line("  → Repaired {$repaired} misassigned tracker(s)");
+            Log::info("afis:sync-groups: repaired {$repaired} misassigned trackers");
+        } else {
+            $this->line("  → No misassigned trackers found");
+        }
+
+
         $this->info("Done. Synced {$totalSynced} groups.");
     }
 }

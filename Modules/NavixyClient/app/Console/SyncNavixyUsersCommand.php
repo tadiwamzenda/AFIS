@@ -20,6 +20,7 @@ class SyncNavixyUsersCommand extends Command
         $totalCreated = 0;
         $totalUpdated = 0;
 
+        // ── Step 1: Sync users from Bantu Track master accounts (instances 1 & 2) ──
         foreach ([1, 2] as $instance) {
             $this->line("  → Fetching sub-users from Instance {$instance}...");
 
@@ -41,21 +42,28 @@ class SyncNavixyUsersCommand extends Command
 
                 if (!$email) continue;
 
+                // Find client by security group ID
+                $client = null;
+                if ($securityGroupId) {
+                    $client = Client::where('navixy_security_group_id', $securityGroupId)
+                        ->where('navixy_instance', $instance)
+                        ->first();
+                }
+
                 $existing = User::where('navixy_user_id', $navixyUserId)
                     ->where('navixy_instance', $instance)
                     ->first();
 
                 if ($existing) {
-                    // Update name, email, active status
                     $existing->update([
                         'name'                     => $name,
                         'email'                    => $email,
                         'navixy_security_group_id' => $securityGroupId,
                         'is_active'                => $isActive,
+                        'client_id'                => $client?->id ?? $existing->client_id,
                     ]);
                     $totalUpdated++;
                 } else {
-                    // Create new user record
                     User::create([
                         'name'                     => $name,
                         'email'                    => $email,
@@ -65,9 +73,73 @@ class SyncNavixyUsersCommand extends Command
                         'navixy_security_group_id' => $securityGroupId,
                         'role'                     => User::ROLE_CLIENT,
                         'is_active'                => $isActive,
+                        'client_id'                => $client?->id,
                     ]);
                     $totalCreated++;
                 }
+            }
+        }
+
+        // ── Step 2: Sync users from independent client accounts ───────────────
+        $this->line("  → Syncing users from independent client accounts...");
+
+        $independentClients = Client::where('is_active', true)
+            ->whereNotNull('navixy_api_key')
+            ->where('id', '!=', 21)
+            ->get();
+
+        foreach ($independentClients as $client) {
+            $this->line("    → {$client->name}...");
+
+            try {
+                // Set client API key so getSubUsers() authenticates as this client
+                $pipelineAuth->setClientApiKey($client->navixy_api_key);
+
+                $subUsers = $pipelineAuth->getSubUsers($client->navixy_instance);
+
+                foreach ($subUsers as $subUser) {
+                    $navixyUserId    = $subUser['id'];
+                    $securityGroupId = $subUser['security_group_id'] ?? null;
+                    $email           = $subUser['login'] ?? null;
+                    $name            = trim(($subUser['first_name'] ?? '') . ' ' . ($subUser['last_name'] ?? '')) ?: $email;
+                    $isActive        = (bool) ($subUser['activated'] ?? true);
+
+                    if (!$email) continue;
+
+                    $existing = User::where('navixy_user_id', $navixyUserId)->first();
+
+                    if ($existing) {
+                        $existing->update([
+                            'name'                     => $name,
+                            'email'                    => $email,
+                            'navixy_security_group_id' => $securityGroupId,
+                            'is_active'                => $isActive,
+                            'client_id'                => $client->id,
+                        ]);
+                        $totalUpdated++;
+                    } else {
+                        User::create([
+                            'name'                     => $name,
+                            'email'                    => $email,
+                            'navixy_user_id'           => $navixyUserId,
+                            'navixy_account_id'        => $client->navixy_account_id ?? 0,
+                            'navixy_instance'          => $client->navixy_instance,
+                            'navixy_security_group_id' => $securityGroupId,
+                            'role'                     => User::ROLE_CLIENT,
+                            'is_active'                => $isActive,
+                            'client_id'                => $client->id,
+                        ]);
+                        $totalCreated++;
+                    }
+                }
+
+                $this->line("      ✓ " . count($subUsers) . " user(s) synced");
+
+            } catch (\Throwable $e) {
+                $this->warn("      ✗ {$client->name} failed: " . $e->getMessage());
+                Log::warning("navixy:sync-users: independent client {$client->name} failed", ['error' => $e->getMessage()]);
+            } finally {
+                $pipelineAuth->setClientApiKey(null);
             }
         }
 

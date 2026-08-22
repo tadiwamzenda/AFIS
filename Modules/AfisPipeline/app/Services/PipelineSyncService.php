@@ -14,12 +14,15 @@ use Modules\AfisPipeline\Models\AfisDeviceAlert;
 use Modules\AfisPipeline\Models\AfisFuelEvent;
 use Modules\AfisPipeline\Models\AfisFuelDaily;
 use Modules\AfisPipeline\Services\FuelDataParser;
+use Modules\AfisPipeline\Services\PipelineAuthService;
 
 class PipelineSyncService
 {
     public function __construct(
-        private NavixyDataService $navixy,
-        private FuelDataParser $fuelParser,) {}
+    private NavixyDataService  $navixy,
+    private FuelDataParser     $fuelParser,
+    private PipelineAuthService $auth,
+    ) {}
 
     public function syncClient(Client $client, ?int $instanceOverride = null): AfisSyncLog
     {
@@ -31,6 +34,13 @@ class PipelineSyncService
 
         try {
             $instance = $instanceOverride ?? $client->navixy_instance ?? 1;
+
+            // Set client API key override if client has independent Navixy account
+            $this->auth->setClientApiKey($client->navixy_api_key ?? null);
+
+            // Use client's own API key if available (independent Navixy account)
+            // Otherwise falls back to Bantu Track master hash for this instance
+            $clientForAuth = $client->navixy_api_key ? $client : null;
 
         // ── Step 1: Discover trackers via master account ──────────────────
 // Get client's group IDs — scoped to this instance
@@ -64,7 +74,7 @@ $clientGroupIds = AfisTrackerGroup::where('client_id', $client->id)
 
        if ($existingTracker) {
             // If tracker belongs to a DIFFERENT client — skip entirely
-            // Never update navixy_group_id across client boundaries
+            // Misassignments are corrected daily by afis:sync-groups Step 5
             if ($existingTracker->client_id !== $client->id) {
                 continue;
             }
@@ -353,7 +363,8 @@ $tripsSynced++;
                 'completed_at'  => now(),
             ]);
         }
-
+        // Clear client API key override after sync
+        $this->auth->setClientApiKey(null);
         return $log;
     }
 }

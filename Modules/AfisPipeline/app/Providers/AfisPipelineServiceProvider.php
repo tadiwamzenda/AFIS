@@ -34,11 +34,18 @@ class AfisPipelineServiceProvider extends ServiceProvider
 
 
     public function register(): void
-    {
-        $this->app->register(EventServiceProvider::class);
-        $this->app->register(RouteServiceProvider::class);
-        $this->app->singleton(\Modules\AfisPipeline\Services\FuelDataParser::class);
-    }
+{
+    $this->app->register(EventServiceProvider::class);
+    $this->app->register(RouteServiceProvider::class);
+    $this->app->singleton(\Modules\AfisPipeline\Services\FuelDataParser::class);
+
+    // Register as singletons so the same instance is shared across all services
+    // Critical for PipelineAuthService: setClientApiKey() must affect the same
+    // instance that NavixyDataService and PipelineSyncService use
+    $this->app->singleton(\Modules\AfisPipeline\Services\PipelineAuthService::class);
+    $this->app->singleton(\Modules\AfisPipeline\Services\NavixyDataService::class);
+    $this->app->singleton(\Modules\AfisPipeline\Services\PipelineSyncService::class);
+}
 
     protected function registerViews(): void
     {

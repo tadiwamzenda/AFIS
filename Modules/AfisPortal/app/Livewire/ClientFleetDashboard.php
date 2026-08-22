@@ -13,6 +13,8 @@ use Modules\AfisPipeline\Models\AfisTracker;
 use Modules\AfisPipeline\Models\AfisTrip;
 use Modules\AfisPipeline\Models\AfisEvent;
 use Modules\AfisPipeline\Models\AfisSyncLog;
+use Illuminate\Support\Facades\Auth;
+
 
 class ClientFleetDashboard extends Component
 {
@@ -35,7 +37,34 @@ class ClientFleetDashboard extends Component
     public function render()
     {
         $client   = Client::findOrFail($this->clientId);
+        
+        // ── Navixy-scoped tracker filter for client portal users ──────────────
+        // When a logged-in client user has a Navixy session hash, use it to
+        // get only the trackers THEY can see (respects Navixy security groups).
+        // BT admin users bypass this and see all client trackers.
+        $allowedNavixyIds = null;
+
+        if (\Illuminate\Support\Facades\Auth::user()?->isClientUser()) {
+            $sessionHash = session('navixy_hash');
+            if ($sessionHash) {
+                try {
+                    $response = \Illuminate\Support\Facades\Http::timeout(15)
+                        ->withHeaders(['Content-Type' => 'application/json'])
+                        ->post('https://api.us.navixy.com/v2/tracker/list', [
+                            'hash' => $sessionHash,
+                        ]);
+                    $navTrackers = $response->json()['list'] ?? [];
+                    $allowedNavixyIds = collect($navTrackers)->pluck('id')->toArray();
+                } catch (\Throwable $e) {
+                    \Illuminate\Support\Facades\Log::warning('ClientFleetDashboard: could not fetch Navixy tracker list', [
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+        }
+
         $trackers = AfisTracker::where('client_id', $this->clientId)
+            ->when($allowedNavixyIds !== null, fn($q) => $q->whereIn('navixy_tracker_id', $allowedNavixyIds))
             ->when($this->search, fn($q) => $q->where('label', 'like', "%{$this->search}%"))
             ->orderBy('label')
             ->get()

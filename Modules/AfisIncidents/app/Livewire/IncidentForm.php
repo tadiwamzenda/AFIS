@@ -12,6 +12,7 @@ use Modules\AfisEngine\Jobs\GenerateAiReportJob;
 use Modules\AfisIncidents\Models\AfisIncident;
 use Modules\AfisPipeline\Models\AfisTracker;
 use Smalot\PdfParser\Parser as PdfParser;
+use Illuminate\Support\Facades\Http;
 
 class IncidentForm extends Component
 {
@@ -139,7 +140,30 @@ class IncidentForm extends Component
 
     public function render()
     {
+        $allowedNavixyIds = null;
+
+        if (\Illuminate\Support\Facades\Auth::user()?->isClientUser()) {
+            $sessionHash = session('navixy_hash');
+            if ($sessionHash) {
+                try {
+                    $response = \Illuminate\Support\Facades\Http::timeout(15)
+                        ->withHeaders(['Content-Type' => 'application/json'])
+                        ->post('https://api.us.navixy.com/v2/tracker/list', [
+                            'hash' => $sessionHash,
+                        ]);
+                    $allowedNavixyIds = collect($response->json()['list'] ?? [])
+                        ->pluck('id')
+                        ->toArray();
+                } catch (\Throwable $e) {
+                    \Illuminate\Support\Facades\Log::warning('IncidentForm: could not fetch Navixy tracker list', [
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+        }
+
         $trackers = AfisTracker::where('client_id', $this->clientId)
+            ->when($allowedNavixyIds !== null, fn($q) => $q->whereIn('navixy_tracker_id', $allowedNavixyIds))
             ->orderBy('label')
             ->get();
 

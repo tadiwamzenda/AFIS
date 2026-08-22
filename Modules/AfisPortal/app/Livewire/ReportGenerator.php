@@ -7,6 +7,7 @@ use Livewire\Component;
 use Modules\AdmmInventory\Models\Client;
 use Modules\AfisPipeline\Models\AfisTrackerGroup;
 use Modules\AfisPortal\Services\ReportDataService;
+use Illuminate\Support\Facades\Http;
 
 class ReportGenerator extends Component
 {
@@ -182,9 +183,37 @@ class ReportGenerator extends Component
         $parentGroups = collect();
 
         if ($this->clientId) {
-            $allGroups = AfisTrackerGroup::where('client_id', $this->clientId)
-                ->orderBy('title')
-                ->get();
+        // Derive allowed group IDs from trackers the user can see in Navixy
+        // (group/list doesn't respect per-user security restrictions — tracker/list does)
+        $allowedNavixyGroupIds = null;
+        if (!\Illuminate\Support\Facades\Auth::user()?->isBtStaff()) {
+            $sessionHash = session('navixy_hash');
+            if ($sessionHash) {
+                try {
+                    $response = \Illuminate\Support\Facades\Http::timeout(15)
+                        ->withHeaders(['Content-Type' => 'application/json'])
+                        ->post('https://api.us.navixy.com/v2/tracker/list', [
+                            'hash' => $sessionHash,
+                        ]);
+                    // Extract unique group_ids from visible trackers
+                    $allowedNavixyGroupIds = collect($response->json()['list'] ?? [])
+                        ->pluck('group_id')
+                        ->filter()
+                        ->unique()
+                        ->values()
+                        ->toArray();
+                } catch (\Throwable $e) {
+                    \Illuminate\Support\Facades\Log::warning('ReportGenerator: could not fetch Navixy trackers for group filter', [
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+        }
+
+        $allGroups = AfisTrackerGroup::where('client_id', $this->clientId)
+            ->when($allowedNavixyGroupIds !== null, fn($q) => $q->whereIn('navixy_group_id', $allowedNavixyGroupIds))
+            ->orderBy('title')
+            ->get();
 
             if ($this->largeFleet) {
                 // Build parent group map

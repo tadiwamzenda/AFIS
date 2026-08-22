@@ -268,25 +268,33 @@ $data = $this->reportData->buildReportData($client, $from, $to, $selectedGroups)
     }
 
     private function resolveClientFromAuth(): \Modules\AdmmInventory\Models\Client
-    {
-        $user = Auth::user();
+{
+    $user = Auth::user();
 
-        if (!$user->navixy_security_group_id || !$user->navixy_instance) {
-            abort(403, 'Your account is not linked to a client fleet.');
-        }
-
-        $client = \Modules\AdmmInventory\Models\Client::where('navixy_security_group_id', $user->navixy_security_group_id)
-            ->where('navixy_instance', $user->navixy_instance)
-            ->first();
-
+    // Method 1: Direct client_id (independent account users)
+    if ($user->client_id) {
+        $client = \Modules\AdmmInventory\Models\Client::find($user->client_id);
         if ($client) return $client;
+    }
 
-        $extended = \Modules\AdmmInventory\Models\ClientSecurityGroup::where('navixy_security_group_id', $user->navixy_security_group_id)
-            ->where('navixy_instance', $user->navixy_instance)
-            ->first();
-
-        if ($extended) return $extended->client;
-
+    if (!$user->navixy_security_group_id || !$user->navixy_instance) {
         abort(403, 'Your account is not linked to a client fleet.');
     }
+
+    // Method 2: Match by security_group_id (master account sub-users)
+    $client = \Modules\AdmmInventory\Models\Client::where('navixy_security_group_id', $user->navixy_security_group_id)
+        ->where('navixy_instance', $user->navixy_instance)
+        ->first();
+
+    if ($client) return $client;
+
+    // Method 3: Extended security groups (ZETDC multi-group)
+    $extended = \Modules\AdmmInventory\Models\ClientSecurityGroup::where('navixy_security_group_id', $user->navixy_security_group_id)
+        ->where('navixy_instance', $user->navixy_instance)
+        ->first();
+
+    if ($extended) return $extended->client;
+
+    abort(403, 'Your account is not linked to a client fleet.');
+}
 }

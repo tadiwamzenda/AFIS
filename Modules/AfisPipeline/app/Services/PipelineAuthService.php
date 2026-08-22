@@ -5,10 +5,12 @@ namespace Modules\AfisPipeline\Services;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Modules\AdmmInventory\Models\Client;
 
 class PipelineAuthService
 {
     private string $baseUrl;
+    private ?string $clientApiKeyOverride = null;
 
     public function __construct()
     {
@@ -16,18 +18,32 @@ class PipelineAuthService
     }
 
     /**
+ * Set a client-specific API key override for independent Navixy accounts.
+ * Call this before syncing an independent client, clear after.
+ */
+public function setClientApiKey(?string $apiKey): void
+{
+    $this->clientApiKeyOverride = $apiKey;
+}
+    /**
      * Get a valid hash for the given instance (1 or 2).
      */
-    public function getHash(int $instance = 1): string
-    {
-        $cacheKey = "afis_pipeline_navixy_hash_instance_{$instance}";
-
-        if (Cache::has($cacheKey)) {
-            return Cache::get($cacheKey);
-        }
-
-        return $this->refreshHash($instance);
+public function getHash(int $instance = 1): string
+{
+    // If a client-specific API key is set — use it directly
+    if ($this->clientApiKeyOverride) {
+        return $this->clientApiKeyOverride;
     }
+
+    // Otherwise use Bantu Track master hash for this instance
+    $cacheKey = "afis_pipeline_navixy_hash_instance_{$instance}";
+
+    if (Cache::has($cacheKey)) {
+        return Cache::get($cacheKey);
+    }
+
+    return $this->refreshHash($instance);
+}
 
     /**
      * Re-authenticate and cache a fresh hash for the given instance.

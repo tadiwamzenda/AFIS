@@ -60,18 +60,24 @@ class IncidentController extends Controller
         /** @var \App\Models\User $user */
         $user = Auth::user();
 
+        // Method 1: Direct client_id (independent account users)
+        if ($user->client_id) {
+            $client = Client::find($user->client_id);
+            if ($client) return $client;
+        }
+
         if (!$user->navixy_security_group_id || !$user->navixy_instance) {
             abort(403, 'Your account is not linked to a client fleet. Contact Bantu Track support.');
         }
 
-        // Check primary client security_group_id
+        // Method 2: Match by security_group_id (master account sub-users)
         $client = Client::where('navixy_security_group_id', $user->navixy_security_group_id)
             ->where('navixy_instance', $user->navixy_instance)
             ->first();
 
         if ($client) return $client;
 
-        // Check extended security groups table (for ZETDC multi-group etc)
+        // Method 3: Extended security groups table (ZETDC multi-group)
         $extended = \Modules\AdmmInventory\Models\ClientSecurityGroup::where('navixy_security_group_id', $user->navixy_security_group_id)
             ->where('navixy_instance', $user->navixy_instance)
             ->first();
