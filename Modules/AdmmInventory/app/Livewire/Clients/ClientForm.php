@@ -21,6 +21,8 @@ class ClientForm extends Component
     public bool   $is_active       = true;
     public string $notes           = '';
     public string $navixy_group_prefix = '';
+    public string $navixy_api_key      = '';
+    public int    $navixy_instance_secondary = 0;
 
 
     protected function rules(): array
@@ -35,6 +37,8 @@ class ClientForm extends Component
             'navixy_account_id'       => ['nullable', 'integer'],
             'navixy_security_group_id'=> ['nullable', 'integer'],
             'navixy_group_prefix'     => ['nullable', 'string', 'max:100'],
+            'navixy_api_key'            => ['nullable', 'string', 'max:255'],
+            'navixy_instance_secondary' => ['nullable', 'in:0,1,2'],
             'contact_person'          => ['nullable', 'string', 'max:255'],
             'contact_email'           => ['nullable', 'email', 'max:255'],
             'contact_phone'           => ['nullable', 'string', 'max:20'],
@@ -58,6 +62,8 @@ class ClientForm extends Component
             $this->is_active        = $client->is_active;
             $this->notes            = $client->notes ?? '';
             $this->navixy_group_prefix = $client->navixy_group_prefix ?? '';
+            $this->navixy_api_key             = $client->navixy_api_key ?? '';
+            $this->navixy_instance_secondary  = $client->navixy_instance_secondary ?? 0;
         }
     }
 
@@ -69,6 +75,8 @@ class ClientForm extends Component
         $data['navixy_account_id']        = !empty($data['navixy_account_id']) ? (int) $data['navixy_account_id'] : 0;
         $data['navixy_security_group_id'] = !empty($data['navixy_security_group_id']) ? (int) $data['navixy_security_group_id'] : null;
         $data['navixy_group_prefix']      = !empty($data['navixy_group_prefix']) ? $data['navixy_group_prefix'] : null;
+        $data['navixy_api_key']            = !empty($data['navixy_api_key']) ? $data['navixy_api_key'] : null;
+        $data['navixy_instance_secondary'] = !empty($data['navixy_instance_secondary']) ? (int) $data['navixy_instance_secondary'] : null;
 
         if ($this->isEditing) {
             $before = $this->client->toArray();
