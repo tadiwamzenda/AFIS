@@ -27,42 +27,69 @@ class GenerateAiReportJob implements ShouldQueue
         public array  $options   = []
     ) {}
 
-    public function handle(AfisEngineService $engine, PromptBuilder $promptBuilder): void
+        public function handle(AfisEngineService $engine, PromptBuilder $promptBuilder): void
     {
         $client  = Client::findOrFail($this->clientId);
         $tracker = $this->trackerId ? AfisTracker::find($this->trackerId) : null;
 
-        $prompt = match($this->reportType) {
-            'vehicle_behaviour' => $promptBuilder->vehicleBehaviourProfile(
-                $tracker,
-                $this->options['days'] ?? 30
-            ),
-            'fleet_intelligence' => $promptBuilder->fleetIntelligence(
-                $client,
-                $this->options['days'] ?? 30
-            ),
-            'incident_analysis' => $promptBuilder->incidentAnalysis(
-                $tracker,
-                $this->options['incident_description'] ?? '',
-                $this->options['incident_date'] ?? now()->toDateString(),
-                $this->options['trip_report_text'] ?? null,
-                $this->options['speed_report_text'] ?? null,
-                $this->options['events_report_text'] ?? null,
-            ),
-            'predictive_intelligence' => $promptBuilder->predictiveIntelligence(
-                $client,
-                $this->options['days'] ?? 90
-            ),
-            default => throw new \InvalidArgumentException("Unknown report type: {$this->reportType}"),
-        };
+        // Prompt building and generateReport() were previously uncaught here.
+        // AfisEngineService::generateReport() already correctly marks its own
+        // AfisAiReport row as 'failed' before re-throwing — but nothing
+        // downstream ever ran to reflect that on a DIFFERENT model this job
+        // also owns: AfisIncident.status stayed stuck at 'analysing' forever
+        // on any AI failure, even though the UI already has a 'failed' state
+        // ready for it. Also covers a TypeError risk: vehicleBehaviourProfile()
+        // requires a non-nullable AfisTracker — if the tracker was deleted
+        // between dispatch and execution, $tracker is null and this throws
+        // immediately, previously with the same "stuck forever" result.
+        try {
+            $prompt = match($this->reportType) {
+                'vehicle_behaviour' => $promptBuilder->vehicleBehaviourProfile(
+                    $tracker,
+                    $this->options['days'] ?? 30
+                ),
+                'fleet_intelligence' => $promptBuilder->fleetIntelligence(
+                    $client,
+                    $this->options['days'] ?? 30
+                ),
+                'incident_analysis' => $promptBuilder->incidentAnalysis(
+                    $tracker,
+                    $this->options['incident_description'] ?? '',
+                    $this->options['incident_date'] ?? now()->toDateString(),
+                    $this->options['trip_report_text'] ?? null,
+                    $this->options['speed_report_text'] ?? null,
+                    $this->options['events_report_text'] ?? null,
+                ),
+                'predictive_intelligence' => $promptBuilder->predictiveIntelligence(
+                    $client,
+                    $this->options['days'] ?? 90
+                ),
+                default => throw new \InvalidArgumentException("Unknown report type: {$this->reportType}"),
+            };
 
-        $aiReport = $engine->generateReport(
-            reportType: $this->reportType,
-            prompt:     $prompt,
-            clientId:   $this->clientId,
-            trackerId:  $this->trackerId,
-            useCache:   $this->options['use_cache'] ?? true,
-        );
+            $aiReport = $engine->generateReport(
+                reportType: $this->reportType,
+                prompt:     $prompt,
+                clientId:   $this->clientId,
+                trackerId:  $this->trackerId,
+                useCache:   $this->options['use_cache'] ?? true,
+            );
+
+        } catch (\Throwable $e) {
+            Log::error('GenerateAiReportJob: failed before/during AI generation', [
+                'report_type' => $this->reportType,
+                'client_id'   => $this->clientId,
+                'tracker_id'  => $this->trackerId,
+                'error'       => $e->getMessage(),
+            ]);
+
+            if ($this->reportType === 'incident_analysis' && !empty($this->options['incident_id'])) {
+                \Modules\AfisIncidents\Models\AfisIncident::where('id', $this->options['incident_id'])
+                    ->update(['status' => 'failed']);
+            }
+
+            throw $e; // preserve normal queue retry/failed-job behaviour ($tries = 2)
+        }
 
         // Link AI report back to incident, build the docx, and mark completed
         if ($this->reportType === 'incident_analysis' && !empty($this->options['incident_id'])) {

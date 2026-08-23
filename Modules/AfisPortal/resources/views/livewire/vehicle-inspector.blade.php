@@ -95,19 +95,25 @@
             <p class="text-sm text-gray-400">No events recorded in this period.</p>
             @endforelse
         </div>
-        {{-- Latest AI report — summary only, no content preview --}}
+                {{-- Latest AI report — summary only, no content preview --}}
         <div class="bg-white rounded-xl border border-gray-200 p-5">
             <h3 class="text-sm font-semibold text-gray-800 mb-4">Latest AI report</h3>
             @if($reports->isNotEmpty())
+                @php $latest = $reports->first(); @endphp
                 <div class="flex items-center justify-between gap-3">
                     <div>
-                        <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700">
-                            {{ ucwords(str_replace('_', ' ', $reports->first()->report_type)) }}
+                        <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-medium {{ $latest->status === 'failed' ? 'bg-red-100 text-red-700' : 'bg-purple-100 text-purple-700' }}">
+                            {{ ucwords(str_replace('_', ' ', $latest->report_type)) }}
                         </span>
-                        <p class="text-xs text-gray-400 mt-1.5">{{ $reports->first()->created_at->diffForHumans() }}</p>
+                        <p class="text-xs text-gray-400 mt-1.5">{{ $latest->created_at->diffForHumans() }}</p>
                     </div>
-                    @if($reports->first()->report_path)
-                    <a href="{{ route('admin.afis.vehicle-reports.download', $reports->first()->id) }}"
+                    @if($latest->status === 'failed')
+                    <span class="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-red-100 text-red-700 flex-shrink-0">
+                        <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                        Failed
+                    </span>
+                    @elseif($latest->report_path)
+                    <a href="{{ route('admin.afis.vehicle-reports.download', $latest->id) }}"
                         class="inline-flex items-center gap-1 text-xs text-brand-600 hover:text-brand-700 font-medium px-3 py-1.5 border border-brand-200 rounded-lg hover:bg-brand-50 transition-colors flex-shrink-0">
                         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
                         Download
@@ -187,17 +193,27 @@
             <span class="text-xs text-gray-400">{{ $reports->count() }} reports</span>
         </div>
         <div class="divide-y divide-gray-50">
-            @forelse($reports as $report)
-            <div class="px-5 py-3 flex items-center justify-between">
+                        @forelse($reports as $report)
+            <div class="px-5 py-3 flex items-center justify-between {{ $report->status === 'failed' ? 'bg-red-50/30' : '' }}">
                 <div>
-                    <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700">
+                    <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-medium {{ $report->status === 'failed' ? 'bg-red-100 text-red-700' : 'bg-purple-100 text-purple-700' }}">
                         {{ ucwords(str_replace('_', ' ', $report->report_type)) }}
                     </span>
                     <p class="text-xs text-gray-400 mt-1">
-                        {{ $report->engine_used }} · {{ $report->tokens_used }} tokens · {{ $report->created_at->format('d M Y H:i') }} · {{ $report->created_at->diffForHumans() }}
+                        @if($report->status === 'failed')
+                            {{ $report->created_at->format('d M Y H:i') }}
+                            @if($report->error_message) · {{ Str::limit($report->error_message, 80) }} @endif
+                        @else
+                            {{ $report->engine_used }} · {{ $report->tokens_used }} tokens · {{ $report->created_at->format('d M Y H:i') }} · {{ $report->created_at->diffForHumans() }}
+                        @endif
                     </p>
                 </div>
-                @if($report->report_path)
+                @if($report->status === 'failed')
+                <span class="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-red-100 text-red-700 flex-shrink-0">
+                    <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                    Failed
+                </span>
+                @elseif($report->report_path)
                 <a href="{{ route('admin.afis.vehicle-reports.download', $report->id) }}"
                     class="inline-flex items-center gap-1 text-xs text-brand-600 hover:text-brand-700 font-medium px-3 py-1.5 border border-brand-200 rounded-lg hover:bg-brand-50 transition-colors flex-shrink-0">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>

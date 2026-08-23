@@ -84,8 +84,9 @@ class VehicleInspector extends Component
                 ->pluck('total', 'event_type'),
         ];
 
+        // Include failed reports too — same reasoning as ReportViewer.
         $reports = AfisAiReport::where('tracker_id', $this->trackerId)
-            ->completed()
+            ->whereIn('status', ['completed', 'failed'])
             ->latest()
             ->get();
 

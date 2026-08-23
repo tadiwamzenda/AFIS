@@ -27,8 +27,30 @@
     @else
     {{-- Report list --}}
     <div class="bg-white rounded-xl border border-gray-200 divide-y divide-gray-50">
-        @forelse($reports as $report)
-        @if($report->report_type === 'vehicle_behaviour' && $report->report_path)
+                @forelse($reports as $report)
+        @if($report->status === 'failed')
+        {{-- Failed generation — nothing to download or read, just surface the error --}}
+        <div class="px-5 py-4 flex items-center justify-between bg-red-50/30">
+            <div>
+                <p class="text-sm font-medium text-gray-800">
+                    {{ ucwords(str_replace('_', ' ', $report->report_type)) }}
+                    @if($report->tracker)
+                        <span class="text-gray-400 font-normal">· {{ $report->tracker->label }}</span>
+                    @endif
+                </p>
+                <p class="text-xs text-gray-400 mt-0.5">
+                    {{ $report->created_at->format('d M Y H:i') }}
+                    @if($report->error_message)
+                        · {{ Str::limit($report->error_message, 80) }}
+                    @endif
+                </p>
+            </div>
+            <span class="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-red-100 text-red-700 flex-shrink-0">
+                <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                Failed
+            </span>
+        </div>
+        @elseif($report->report_type === 'vehicle_behaviour' && $report->report_path)
         {{-- Vehicle Behaviour reports have a real PDF — download only, no raw-text view, same treatment as Vehicle Inspector's report list --}}
         <div class="px-5 py-4 flex items-center justify-between hover:bg-gray-50">
             <div>

@@ -34,8 +34,10 @@ class ReportViewer extends Component
     {
         $client = Client::findOrFail($this->clientId);
 
+        // Include failed reports too — a failed generation attempt should
+        // be visible with an error state, not silently disappear.
         $reports = AfisAiReport::where('client_id', $this->clientId)
-            ->completed()
+            ->whereIn('status', ['completed', 'failed'])
             ->with('tracker')
             ->when($this->typeFilter, fn($q) => $q->where('report_type', $this->typeFilter))
             ->latest()
