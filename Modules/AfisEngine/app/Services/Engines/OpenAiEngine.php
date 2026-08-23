@@ -34,9 +34,10 @@ class OpenAiEngine
             throw new \RuntimeException('OpenAI API key not configured.');
         }
 
-        $startTime = microtime(true);
+                $startTime = microtime(true);
 
-        $response = Http::timeout(120)
+        $response = Http::connectTimeout(15)
+            ->timeout(120)
             ->withHeaders([
                 'Authorization' => "Bearer {$this->apiKey}",
                 'Content-Type'  => 'application/json',
@@ -62,9 +63,17 @@ class OpenAiEngine
         }
 
         $data = $response->json();
+        $text = $data['choices'][0]['message']['content'] ?? '';
+
+        // Same reasoning as ClaudeEngine — a 200 with no usable content
+        // must fail loudly, not save an empty 'completed' report.
+        if (trim($text) === '') {
+            Log::error('OpenAiEngine: successful response but empty/unexpected content structure', ['response_keys' => array_keys($data)]);
+            throw new \RuntimeException('OpenAI API returned a successful response with no usable content.');
+        }
 
         return [
-            'response'    => $data['choices'][0]['message']['content'] ?? '',
+            'response'    => $text,
             'tokens'      => $data['usage']['total_tokens'] ?? 0,
             'duration_ms' => $durationMs,
         ];
