@@ -56,7 +56,7 @@
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">
                     Navixy group prefix
-                    <span class="text-xs font-normal text-gray-400">(for auto-mapping tracker groups)</span>
+                    <span class="text-xs font-normal text-gray-400">(auto-mapping tracker groups)</span>
                 </label>
                 <input wire:model="navixy_group_prefix" type="text"
                     class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
@@ -64,18 +64,22 @@
                 <p class="mt-1 text-xs text-gray-400">Tracker groups starting with this prefix auto-link to this client.</p>
             </div>
 
-            {{-- Navixy API key (independent accounts) --}}
+                        {{-- Navixy API key (independent accounts) --}}
             <div class="md:col-span-2">
                 <label class="block text-sm font-medium text-gray-700 mb-1">
                     Navixy API key
                     <span class="text-xs font-normal text-gray-400">(independent account only)</span>
                 </label>
-                <input wire:model="navixy_api_key" type="text"
+                <input wire:model="navixy_api_key" type="password" autocomplete="new-password"
                     class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 font-mono"
-                    placeholder="e.g. d4708da4fb0ec6e7d792044057977f47">
+                    placeholder="{{ $hasExistingApiKey ? '••••••••••••••••••••••••••••••••' : 'e.g. d4708da4fb0ec6e7d792044057977f47' }}">
                 <p class="mt-1 text-xs text-gray-400">
-                    Only set this for clients with their own independent Navixy master account.
-                    Leave blank for sub-users under Bantu Track master account.
+                    @if($hasExistingApiKey)
+                        A key is already set. Leave blank to keep it unchanged, or enter a new one to replace it.
+                    @else
+                        Only set this for clients with their own independent Navixy master account.
+                        Leave blank for sub-users under Bantu Track master account.
+                    @endif
                     Generate from: Navixy → Account Settings → API Keys.
                 </p>
             </div>
@@ -84,7 +88,7 @@
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">
                     Secondary Navixy instance
-                    <span class="text-xs font-normal text-gray-400">(only for clients on both instances)</span>
+                    <span class="text-xs font-normal text-gray-400">(Dual instance clients)</span>
                 </label>
                 <select wire:model="navixy_instance_secondary"
                     class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">

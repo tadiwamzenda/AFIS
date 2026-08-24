@@ -22,6 +22,7 @@ class ClientForm extends Component
     public string $notes           = '';
     public string $navixy_group_prefix = '';
     public string $navixy_api_key      = '';
+    public bool   $hasExistingApiKey   = false;
     public int    $navixy_instance_secondary = 0;
 
 
@@ -62,7 +63,12 @@ class ClientForm extends Component
             $this->is_active        = $client->is_active;
             $this->notes            = $client->notes ?? '';
             $this->navixy_group_prefix = $client->navixy_group_prefix ?? '';
-            $this->navixy_api_key             = $client->navixy_api_key ?? '';
+            // Never re-render the real key into the page. A masked
+            // placeholder signals "a key is already set" without exposing
+            // it; the field starts blank so save() only touches it if the
+            // admin actually types a new one.
+            $this->hasExistingApiKey  = !empty($client->navixy_api_key);
+            $this->navixy_api_key     = '';
             $this->navixy_instance_secondary  = $client->navixy_instance_secondary ?? 0;
         }
     }
@@ -75,8 +81,17 @@ class ClientForm extends Component
         $data['navixy_account_id']        = !empty($data['navixy_account_id']) ? (int) $data['navixy_account_id'] : 0;
         $data['navixy_security_group_id'] = !empty($data['navixy_security_group_id']) ? (int) $data['navixy_security_group_id'] : null;
         $data['navixy_group_prefix']      = !empty($data['navixy_group_prefix']) ? $data['navixy_group_prefix'] : null;
-        $data['navixy_api_key']            = !empty($data['navixy_api_key']) ? $data['navixy_api_key'] : null;
-        $data['navixy_instance_secondary'] = !empty($data['navixy_instance_secondary']) ? (int) $data['navixy_instance_secondary'] : null;
+        if (empty($data['navixy_api_key'])) {
+            // Left blank — if editing and a key already exists, don't
+            // touch it (drop the key entirely so update() leaves the
+            // encrypted column untouched). Only relevant on create, where
+            // there's nothing to preserve, so null is correct there.
+            if ($this->isEditing && $this->hasExistingApiKey) {
+                unset($data['navixy_api_key']);
+            } else {
+                $data['navixy_api_key'] = null;
+            }
+        }        $data['navixy_instance_secondary'] = !empty($data['navixy_instance_secondary']) ? (int) $data['navixy_instance_secondary'] : null;
 
         if ($this->isEditing) {
             $before = $this->client->toArray();

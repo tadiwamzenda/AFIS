@@ -23,7 +23,13 @@ class Client extends Model
 ];
 
     protected $casts = [
-        'is_active' => 'boolean',
+        'is_active'      => 'boolean',
+        // Encrypted at rest — this is a live, reusable Navixy account
+        // credential (used for independent-account clients, per today's
+        // multi-account migration work). Transparent to every other part
+        // of the app that reads $client->navixy_api_key; only the raw DB
+        // column changes.
+        'navixy_api_key' => 'encrypted',
     ];
 
     public function simCards(): HasMany
