@@ -124,7 +124,7 @@ class ReportController extends Controller
             }
 
             $data['ai_analysis']      = $aiResponse;
-            $data['ai_analysis_html'] = (new GithubFlavoredMarkdownConverter())->convert($aiResponse)->getContent();
+            $data['ai_analysis_html'] = (new GithubFlavoredMarkdownConverter(['html_input' => 'strip']))->convert($aiResponse)->getContent();
 
             $pdf = Pdf::loadView('afisportal::reports.ai-report', $data)
                 ->setPaper('a4', 'portrait')
@@ -289,7 +289,7 @@ class ReportController extends Controller
             }
 
             $data['ai_analysis']      = $aiResponse;
-            $data['ai_analysis_html'] = (new GithubFlavoredMarkdownConverter())->convert($aiResponse)->getContent();
+            $data['ai_analysis_html'] = (new GithubFlavoredMarkdownConverter(['html_input' => 'strip']))->convert($aiResponse)->getContent();
 
             $pdf = Pdf::loadView('afisportal::reports.ai-report', $data)
                 ->setPaper('a4', 'portrait')

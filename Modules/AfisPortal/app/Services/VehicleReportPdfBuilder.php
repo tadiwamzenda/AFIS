@@ -12,7 +12,7 @@ class VehicleReportPdfBuilder
 {
     public function build(AfisAiReport $report, AfisTracker $tracker, int $days): string
     {
-        $html = (new GithubFlavoredMarkdownConverter())->convert($report->response)->getContent();
+        $html = (new GithubFlavoredMarkdownConverter(['html_input' => 'strip']))->convert($report->response)->getContent();
 
         $pdf = Pdf::loadView('afisportal::reports.vehicle-behaviour', [
             'tracker'      => $tracker,
