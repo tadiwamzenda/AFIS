@@ -62,15 +62,42 @@ class ClientForm extends Component
             $this->contact_phone    = $client->contact_phone  ?? '';
             $this->is_active        = $client->is_active;
             $this->notes            = $client->notes ?? '';
-            $this->navixy_group_prefix = $client->navixy_group_prefix ?? '';
+                        $this->navixy_group_prefix = $client->navixy_group_prefix ?? '';
             // Never re-render the real key into the page. A masked
             // placeholder signals "a key is already set" without exposing
             // it; the field starts blank so save() only touches it if the
             // admin actually types a new one.
-            $this->hasExistingApiKey  = !empty($client->navixy_api_key);
+            //
+            // A key stored BEFORE the 'encrypted' cast existed is raw
+            // plaintext, not a valid encrypted payload — Laravel's cast
+            // tries to decrypt on every read and throws for it. Treat that
+            // exact failure as "yes, a key exists" (it does — we just
+            // can't safely read it through this path), not a crash.
+            try {
+                $this->hasExistingApiKey = !empty($client->navixy_api_key);
+            } catch (\Illuminate\Contracts\Encryption\DecryptException $e) {
+                $this->hasExistingApiKey = true;
+            }
             $this->navixy_api_key     = '';
             $this->navixy_instance_secondary  = $client->navixy_instance_secondary ?? 0;
         }
+    }
+
+    /**
+     * Builds an audit-log snapshot WITHOUT navixy_api_key — two reasons:
+     * (1) toArray() applies the 'encrypted' cast to every attribute,
+     * including a legacy plaintext value that predates the cast, which
+     * throws DecryptException and would crash EVERY edit for that client,
+     * not just ones touching the key field; (2) even once decryptable,
+     * the real secret shouldn't be written into the audit trail in
+     * plaintext — same reasoning as redacting it from logs elsewhere in
+     * this hardening series.
+     */
+    private function safeSnapshot(Client $client): array
+    {
+        $data = $client->toArray();
+        $data['navixy_api_key'] = '[REDACTED]';
+        return $data;
     }
 
     public function save(AuditLogInterface $auditLog): void
@@ -93,14 +120,14 @@ class ClientForm extends Component
             }
         }        $data['navixy_instance_secondary'] = !empty($data['navixy_instance_secondary']) ? (int) $data['navixy_instance_secondary'] : null;
 
-        if ($this->isEditing) {
-            $before = $this->client->toArray();
+                if ($this->isEditing) {
+            $before = $this->safeSnapshot($this->client);
             $this->client->update($data);
 
             $auditLog->record(
                 event:      'client.updated',
                 module:     'AdmmInventory',
-                data:       ['before' => $before, 'after' => $this->client->fresh()->toArray()],
+                data:       ['before' => $before, 'after' => $this->safeSnapshot($this->client->fresh())],
                 entityType: 'Client',
                 entityId:   $this->client->id
             );
@@ -112,7 +139,7 @@ class ClientForm extends Component
             $auditLog->record(
                 event:      'client.created',
                 module:     'AdmmInventory',
-                data:       $client->toArray(),
+                data:       $this->safeSnapshot($client),
                 entityType: 'Client',
                 entityId:   $client->id
             );

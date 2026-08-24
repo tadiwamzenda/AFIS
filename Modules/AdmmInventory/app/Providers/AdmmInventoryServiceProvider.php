@@ -4,7 +4,9 @@ namespace Modules\AdmmInventory\Providers;
 
 use Illuminate\Support\ServiceProvider;
 use Modules\AdmmInventory\Console\TakeStockSnapshotCommand;
+use Modules\AdmmInventory\Console\Commands\EncryptLegacyApiKeysCommand;
 use Illuminate\Console\Scheduling\Schedule;
+
 
 class AdmmInventoryServiceProvider extends ServiceProvider
 {
@@ -19,6 +21,7 @@ class AdmmInventoryServiceProvider extends ServiceProvider
 
         $this->commands([
             TakeStockSnapshotCommand::class,
+            EncryptLegacyApiKeysCommand::class,
         ]);
 
         $this->callAfterResolving(Schedule::class, function (Schedule $schedule) {
