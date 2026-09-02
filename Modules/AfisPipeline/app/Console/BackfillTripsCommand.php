@@ -13,6 +13,7 @@ use Modules\AfisPipeline\Models\AfisTracker;
 use Modules\AfisPipeline\Models\AfisTrip;
 use Modules\AfisPipeline\Services\FuelDataParser;
 use Modules\AfisPipeline\Services\NavixyDataService;
+use Modules\AfisPipeline\Services\PipelineAuthService;
 
 class BackfillTripsCommand extends Command
 {
@@ -24,7 +25,7 @@ class BackfillTripsCommand extends Command
 
     protected $description = 'Backfill historical trip, mileage, alerts and fuel data from Navixy';
 
-    public function handle(NavixyDataService $navixy, FuelDataParser $fuelParser): void
+    public function handle(NavixyDataService $navixy, FuelDataParser $fuelParser, PipelineAuthService $auth): void
     {
         $from = $this->option('from')
             ? Carbon::parse($this->option('from'))->startOfDay()
@@ -40,7 +41,7 @@ class BackfillTripsCommand extends Command
             ? Client::where('id', $this->option('client'))->get()
             : Client::active()->get();
 
-        foreach ($clients as $client) {
+                foreach ($clients as $client) {
             $instance   = $client->navixy_instance ?? 1;
             $trackers   = AfisTracker::where('client_id', $client->id)->get();
 
@@ -50,6 +51,19 @@ class BackfillTripsCommand extends Command
             }
 
             $this->line("  → {$client->name}: {$trackers->count()} trackers...");
+
+            // Independent-account clients (REF, NHS, Chiredzi RDC, etc.)
+            // are invisible to Bantu Track's master credential — confirmed
+            // via direct testing weeks ago. Without this override, EVERY
+            // Navixy call below silently falls through to the master hash
+            // and returns empty for these clients (exactly what happened:
+            // trackers resolved fine from the local DB, but 0 trips/
+            // mileage/alerts/fuel came back). PipelineSyncService already
+            // does this for the live 15-min sync — this command never had
+            // the same fix applied.
+            $auth->setClientApiKey($client->navixy_api_key ?: null);
+
+            try {
 
             $trackerIds   = $trackers->pluck('navixy_tracker_id')->toArray();
             $tripCount    = 0;
@@ -238,7 +252,14 @@ class BackfillTripsCommand extends Command
                 }
             }
 
-            $this->info("     ✓ {$tripCount} trips · {$mileageCount} mileage records · {$alertCount} alerts · {$fuelCount} fuel daily records");
+                        $this->info("     ✓ {$tripCount} trips · {$mileageCount} mileage records · {$alertCount} alerts · {$fuelCount} fuel daily records");
+
+            } finally {
+                // Always clear, even on failure — otherwise this client's
+                // override could leak into the NEXT client's iteration and
+                // silently corrupt their data too.
+                $auth->setClientApiKey(null);
+            }
         }
 
         $this->info('Backfill complete.');
