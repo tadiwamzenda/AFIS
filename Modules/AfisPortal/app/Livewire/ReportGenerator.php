@@ -92,10 +92,14 @@ class ReportGenerator extends Component
         $this->toDate   = Carbon::now()->subMonth()->endOfMonth()->format('Y-m-d');
     }
 
-    public function updatedPeriod(): void
+        public function updatedPeriod(): void
     {
         match($this->period) {
             'daily'   => $this->fromDate = $this->toDate = Carbon::yesterday()->format('Y-m-d'),
+            'weekly'  => [
+                $this->fromDate = Carbon::now()->subWeek()->startOfWeek()->format('Y-m-d'),
+                $this->toDate   = Carbon::now()->subWeek()->endOfWeek()->format('Y-m-d'),
+            ],
             'monthly' => $this->setMonthDates(),
             default   => null,
         };
@@ -114,12 +118,30 @@ class ReportGenerator extends Component
         }
     }
 
-    public function generateStandardReport(): mixed
+        public function generateStandardReport(): mixed
     {
         $this->error = '';
 
         if (!$this->clientId) {
             $this->error = 'Please select a client.';
+            return null;
+        }
+
+        try {
+            $rangeDays = \Carbon\Carbon::parse($this->fromDate)->startOfDay()->diffInDays(\Carbon\Carbon::parse($this->toDate)->startOfDay()) + 1;
+        } catch (\Throwable $e) {
+            
+            \Illuminate\Support\Facades\Log::error('ReportGenerator: invalid date range', [
+                'fromDate' => $this->fromDate,
+                'toDate'   => $this->toDate,
+                'error'    => $e->getMessage(),
+            ]);
+            $this->error = 'Invalid date range selected. Please re-select the period and try again.';
+            return null;
+        }
+
+        if ($rangeDays > 31) {
+            $this->error = "Standard Reports are limited to 31 days at a time (you selected {$rangeDays}). For longer periods, please generate multiple reports covering shorter ranges.";
             return null;
         }
 
@@ -138,7 +160,6 @@ class ReportGenerator extends Component
             'selectedGroups' => $this->selectedGroups,
         ]);
     }
-
 
     public function generateAiReport(): mixed
     {
@@ -215,7 +236,7 @@ class ReportGenerator extends Component
             ->orderBy('title')
             ->get();
 
-            if ($this->largeFleet) {
+                        if ($this->largeFleet) {
                 // Build parent group map
                 $parentMap = [];
                 foreach ($allGroups as $group) {
@@ -225,7 +246,28 @@ class ReportGenerator extends Component
                 ksort($parentMap);
                 $parentGroups = collect($parentMap);
             } else {
-                $groups = $allGroups;
+                // Merge groups sharing an EXACT identical title into one
+                // entry. Confirmed via direct data inspection: a client
+                // migrated from a Bantu Track master-account sub-user to
+                // their own independent Navixy account keeps BOTH the old
+                // and new navixy_group_id as separate rows with the same
+                // title (REF: "REF HEAD OFFICE" and "REF MASVINGO" each
+                // exist twice). This never touches trackers' real
+                // navixy_group_id or deletes any AfisTrackerGroup row —
+                // purely a selection-layer merge, reusing the exact same
+                // [title => group_ids[]] shape (and toggleParent()) already
+                // built for the large-fleet branch above.
+                $groupMap = [];
+                foreach ($allGroups as $group) {
+                    $groupMap[$group->title][] = $group->navixy_group_id;
+                }
+                ksort($groupMap);
+                $groups = collect($groupMap);
+
+                $groupVehicleCounts = $groups->mapWithKeys(function ($groupIds, $title) {
+                    $count = \Modules\AfisPipeline\Models\AfisTracker::whereIn('navixy_group_id', $groupIds)->count();
+                    return [$title => $count];
+                });
             }
         }
 
@@ -241,7 +283,7 @@ class ReportGenerator extends Component
 
         return view('afisportal::livewire.report-generator', compact(
             'clients', 'groups', 'parentGroups', 'recentReports'
-        ));
+        ))->with('groupVehicleCounts', $groupVehicleCounts ?? collect());
     }
 
 }

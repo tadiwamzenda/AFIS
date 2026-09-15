@@ -260,6 +260,51 @@ class SyncTrackerGroupsCommand extends Command
         }
 
 
+                // ── Step 6: Orphaned group cleanup ────────────────────────────────────
+        // Mirror of Step 5, in the opposite direction: Step 5 fixes a TRACKER
+        // whose client_id disagrees with its GROUP. This fixes a GROUP whose
+        // client_id disagrees with ALL of its trackers — i.e. every tracker
+        // under this group's navixy_group_id has already, correctly, ended
+        // up at MISCELLANEOUS (via Step 3's ghost-tracker cleanup), but the
+        // group record itself was never updated to match. 
+        // Deliberately conservative: only acts when the group HAS trackers
+        // and ALL of them contradict the group's client_id — a group with
+        // zero trackers (e.g. genuinely new/empty) is left untouched, since
+        // absence of trackers isn't evidence of a wrong assignment.
+        $this->line('  → Cleaning up orphaned groups...');
+
+        $orphanedGroups = 0;
+
+        AfisTrackerGroup::where('client_id', '!=', 21)
+            ->chunk(100, function ($groups) use (&$orphanedGroups) {
+                foreach ($groups as $group) {
+                    $trackerClientIds = AfisTracker::where('navixy_group_id', $group->navixy_group_id)
+                        ->distinct()
+                        ->pluck('client_id');
+
+                    if ($trackerClientIds->isEmpty()) continue; // no trackers — no evidence either way, leave alone
+
+                    $allGhost = $trackerClientIds->every(fn($id) => $id === 21);
+                    if (!$allGhost) continue; // at least one real tracker still agrees — group is fine
+
+                    $group->update(['client_id' => 21]);
+                    $orphanedGroups++;
+
+                    Log::info("afis:sync-groups: moved orphaned group to MISCELLANEOUS", [
+                        'group_id'        => $group->id,
+                        'navixy_group_id' => $group->navixy_group_id,
+                        'title'           => $group->title,
+                        'previous_client' => $group->client_id,
+                    ]);
+                }
+            });
+
+        if ($orphanedGroups > 0) {
+            $this->line("  → Moved {$orphanedGroups} orphaned group(s) to MISCELLANEOUS");
+        } else {
+            $this->line('  → No orphaned groups found');
+        }
+
         $this->info("Done. Synced {$totalSynced} groups.");
     }
 }

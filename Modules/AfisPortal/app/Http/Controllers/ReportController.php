@@ -24,14 +24,22 @@ class ReportController extends Controller
         ini_set('memory_limit', '2048M');
         ini_set('max_execution_time', '0');
 
-        $client         = Client::findOrFail($request->clientId);
-        $from           = Carbon::parse($request->from)->startOfDay();
-        $to             = Carbon::parse($request->to)->endOfDay();
-        $selectedGroups = $request->selectedGroups
-            ? array_filter(array_map('intval', (array) $request->selectedGroups))
-            : [];
+            $client         = Client::findOrFail($request->clientId);
+            $from           = Carbon::parse($request->from)->startOfDay();
+            $to             = Carbon::parse($request->to)->endOfDay();
+            $selectedGroups = $request->selectedGroups
+                ? array_filter(array_map('intval', (array) $request->selectedGroups))
+                : [];
 
-        try {
+            // Server-side enforcement of the 31-day cap — ReportGenerator.php
+            // already blocks this in the UI, but this route is reachable directly
+            // by URL with arbitrary dates, so the real limit has to live here too.
+            
+            if ($from->copy()->startOfDay()->diffInDays($to->copy()->startOfDay()) + 1 > 31) {
+                return back()->withErrors(['report' => 'Standard Reports are limited to 31 days at a time. Please choose a shorter date range.']);
+            }
+
+            try {
             $trackerCount = \Modules\AfisPipeline\Models\AfisTracker::where('client_id', $client->id)
                 ->when(!empty($selectedGroups), fn($q) => $q->whereIn('navixy_group_id', $selectedGroups))
                 ->count();
@@ -200,7 +208,7 @@ class ReportController extends Controller
         return back()->with('success', 'Report deleted.');
     }
 
-        public function clientStandardReport(Request $request)
+            public function clientStandardReport(Request $request)
     {
         $client = $this->resolveClientFromAuth();
 
@@ -209,6 +217,11 @@ class ReportController extends Controller
         $selectedGroups = $request->selectedGroups
             ? array_filter(array_map('intval', (array) $request->selectedGroups))
             : [];
+
+        // Same 31-day cap and reasoning as standardReport() (admin) above.
+        if ($from->diffInDays($to) + 1 > 31) {
+            return back()->withErrors(['report' => 'Standard Reports are limited to 31 days at a time. Please choose a shorter date range.']);
+        }
 
         try {
             $data = $this->reportData->buildReportData($client, $from, $to, $selectedGroups);

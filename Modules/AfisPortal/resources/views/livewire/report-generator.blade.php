@@ -1,8 +1,12 @@
 <div class="space-y-4">
 
-    @if($error)
+        @if($error)
         <div class="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{{ $error }}</div>
     @endif
+
+    @error('report')
+        <div class="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{{ $message }}</div>
+    @enderror
 
     <div class="bg-white rounded-xl border border-gray-200 p-6">
         <h3 class="text-sm font-semibold text-gray-800 mb-5">Generate report</h3>
@@ -56,15 +60,20 @@
                     {{ empty($selectedGroups) ? 'All regions — consolidated report' : count(array_unique($selectedGroups)) . ' sub-group(s) selected' }}
                 </p>
                 @else
-                {{-- Simple checkboxes for small fleets --}}
+                {{-- Simple checkboxes for small fleets — merged by exact
+                     title, so an independent-account client's duplicate
+                     old/new group IDs show as ONE checkbox with a correctly
+                     combined vehicle count --}}
                 <div class="flex flex-wrap gap-2">
-                    @foreach($groups as $group)
+                    @foreach($groups as $title => $groupIds)
+                    @php $allSelected = collect($groupIds)->every(fn($id) => in_array($id, $selectedGroups)); @endphp
                     <label class="flex items-center gap-1.5 cursor-pointer px-2 py-1 border border-gray-200 rounded-lg hover:bg-gray-50">
                         <input type="checkbox"
-                            wire:click="toggleGroup({{ $group->navixy_group_id }})"
-                            @checked(in_array($group->navixy_group_id, $selectedGroups))
+                            wire:click="toggleParent('{{ $title }}', {{ json_encode($groupIds) }})"
+                            @checked($allSelected)
                             class="w-3.5 h-3.5 rounded border-gray-300 text-brand-500">
-                        <span class="text-xs text-gray-700">{{ $group->title }}</span>
+                        <span class="text-xs text-gray-700">{{ $title }}</span>
+                        <span class="text-xs text-gray-400">({{ $groupVehicleCounts[$title] ?? 0 }})</span>
                     </label>
                     @endforeach
                 </div>
@@ -78,6 +87,7 @@
                 <select wire:model.live="period"
                     class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
                     <option value="daily">Daily</option>
+                    <option value="weekly">Weekly</option>
                     <option value="monthly" selected>Monthly</option>
                     <option value="custom">Custom range</option>
                 </select>
