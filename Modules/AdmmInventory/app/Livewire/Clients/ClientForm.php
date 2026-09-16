@@ -105,7 +105,7 @@ class ClientForm extends Component
         $data = $this->validate();
 
         // Convert empty strings to null for optional integer fields
-        $data['navixy_account_id']        = !empty($data['navixy_account_id']) ? (int) $data['navixy_account_id'] : 0;
+        $data['navixy_account_id']        = !empty($data['navixy_account_id']) ? (int) $data['navixy_account_id'] : null;
         $data['navixy_security_group_id'] = !empty($data['navixy_security_group_id']) ? (int) $data['navixy_security_group_id'] : null;
         $data['navixy_group_prefix']      = !empty($data['navixy_group_prefix']) ? $data['navixy_group_prefix'] : null;
         if (empty($data['navixy_api_key'])) {
