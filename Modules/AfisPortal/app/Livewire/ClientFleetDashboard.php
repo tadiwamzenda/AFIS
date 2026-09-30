@@ -74,7 +74,7 @@ class ClientFleetDashboard extends Component
                 $tracker->event_count = \Modules\AfisPipeline\Models\AfisDeviceAlert::where('tracker_id', $tracker->id)->where('occurred_at', '>=', $last30Days)->count();
                 // >=195 km/h is a known GPS/sensor error, excluded fleet-wide —
                 // same rule already applied in every report this session.
-                $tracker->max_speed   = AfisTrip::where('tracker_id', $tracker->id)->where('start_time', '>=', $last30Days)->where('max_speed_kmh', '<', 195)->max('max_speed_kmh');
+                $tracker->max_speed   = AfisTrip::where('tracker_id', $tracker->id)->where('start_time', '>=', $last30Days)->where('max_speed_kmh', '<',165)->max('max_speed_kmh');
                 $tracker->total_km    = round(AfisTrip::where('tracker_id', $tracker->id)->where('start_time', '>=', $last30Days)->sum('distance_km'), 1);
                 $tracker->last_report = AfisAiReport::where('tracker_id', $tracker->id)->completed()->latest()->first();
 

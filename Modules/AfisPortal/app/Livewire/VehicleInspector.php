@@ -74,7 +74,7 @@ class VehicleInspector extends Component
             'total_distance_km' => round((clone $tripsQuery)->sum('distance_km'), 1),
             'avg_speed_kmh'     => round((clone $tripsQuery)->avg('avg_speed_kmh'), 1),
             // >=195 km/h is a known GPS/sensor error, excluded fleet-wide.
-            'max_speed_kmh'     => round((clone $tripsQuery)->where('max_speed_kmh', '<', 195)->max('max_speed_kmh'), 1),
+            'max_speed_kmh'     => round((clone $tripsQuery)->where('max_speed_kmh', '<', 165)->max('max_speed_kmh'), 1),
             'total_hours'       => round((clone $tripsQuery)->sum('duration_minutes') / 60, 1),
             'total_events'      => $eventsCount,
             'event_types'       => \Modules\AfisPipeline\Models\AfisDeviceAlert::where('tracker_id', $this->trackerId)
