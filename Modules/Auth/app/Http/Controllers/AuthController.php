@@ -34,7 +34,6 @@ class AuthController extends Controller
         ]);
 
         // ── Step 1: Authenticate against Navixy (same URL for both instances) ──
-        
         try {
             $navixy = $this->navixyAuth->authenticate($request->email, $request->password);
         } catch (\RuntimeException $e) {
@@ -42,79 +41,117 @@ class AuthController extends Controller
                 ->withErrors(['email' => 'Invalid credentials. Please check your Navixy email and password.'])
                 ->withInput(['email' => $request->email]);
         }
-        
 
         // Step 2: Find or auto-create local user
-        $userId = $navixy['user_id'] ?? null;
 
-        if ($userId) {
-            // Sub-user with user_id returned — resolve or auto-create
-            $user = $this->resolveOrCreateUser((int) $userId, $request->email, $navixy);
-        } else {
-            // Navixy didn't return user_id (master accounts and some sub-users)
-            // Fall back to email lookup — works for both BT staff and clients
+        // Master-account-direct login — neither instance's master credential
+        // is a "sub-user" of anything, so none of the original fallback
+        // searches below can ever find it. Confirmed via direct testing:
+        // Navixy returns success with user_id/account_id both empty for
+        // this exact case. Checked explicitly here, first.
+        $masterEmails = [
+            config('auth-module.navixy_instance1_email') ?? env('NAVIXY_INSTANCE1_EMAIL'),
+            config('auth-module.navixy_instance2_email') ?? env('NAVIXY_INSTANCE2_EMAIL'),
+        ];
+
+        if (in_array($request->email, array_filter($masterEmails), true)) {
+            $instance = $request->email === $masterEmails[0] ? 1 : 2;
+
             $user = User::where('email', $request->email)->first();
 
             if (!$user) {
-            // Not in local DB yet — try finding in master account sub-users
-            $instanceData = $this->findUserInInstances(0, $request->email);
-
-            if ($instanceData) {
-                [$instance, $subUserData] = $instanceData;
-                $name = trim(($subUserData['first_name'] ?? '') . ' ' . ($subUserData['last_name'] ?? '')) ?: $request->email;
-
                 $user = User::create([
-                    'name'                     => $name,
-                    'email'                    => $request->email,
-                    'navixy_user_id'           => $subUserData['id'] ?? 0,
-                    'navixy_account_id'        => 0,
-                    'navixy_instance'          => $instance,
-                    'navixy_security_group_id' => $subUserData['security_group_id'] ?? null,
-                    'client_id'                => $subUserData['_client_id'] ?? null,
-                    'role'                     => User::ROLE_CLIENT,
-                    'is_active'                => true,
+                    'name'              => 'Bantu Track Admin',
+                    'email'             => $request->email,
+                    // Column is bigint UNSIGNED + UNIQUE — negative sentinels
+                    // aren't valid, and 0 for both instances would collide.
+                    // 999999001 / 999999002 are far outside any real Navixy
+                    // ID range seen anywhere in this app, unique per instance.
+                    'navixy_user_id'    => 999999000 + $instance,
+                    'navixy_account_id' => null,
+                    'navixy_instance'   => $instance,
+                    'role'              => User::ROLE_BT_ADMIN,
+                    'is_active'         => true,
+                ]);
+
+                Log::info('AuthController: auto-created master account user', [
+                    'user_id'  => $user->id,
+                    'email'    => $request->email,
+                    'instance' => $instance,
                 ]);
             }
+        } else {
+            $userId = $navixy['user_id'] ?? null;
 
-            if (!$user) {
-                // Last resort — check if this is an independent client master account
-                // These users authenticate directly against their own Navixy account
-                // and won't appear in any sub-user list
-                $independentClient = $this->findIndependentClientByEmail($request->email);
-
-                if ($independentClient) {
-                // Check if user already exists by email (may have been created before)
+            if ($userId) {
+                // Sub-user with user_id returned — resolve or auto-create
+                $user = $this->resolveOrCreateUser((int) $userId, $request->email, $navixy);
+            } else {
+                // Navixy didn't return user_id (master accounts and some sub-users)
+                // Fall back to email lookup — works for both BT staff and clients
                 $user = User::where('email', $request->email)->first();
 
                 if (!$user) {
-                    $user = User::create([
-                        'name'             => $request->email,
-                        'email'            => $request->email,
-                        // Master account users don't have a navixy_user_id — use null
-                        // to avoid unique constraint violation (multiple masters = multiple nulls)
-                        'navixy_user_id'   => $navixy['user_id'] ?: null,
-                        'navixy_account_id'=> $navixy['account_id'] ?: null,
-                        'navixy_instance'  => $independentClient->navixy_instance,
-                        'client_id'        => $independentClient->id,
-                        'role'             => User::ROLE_CLIENT,
-                        'is_active'        => true,
-                    ]);
-                } else {
-                    // Update existing user with client_id if missing
-                    if (!$user->client_id) {
-                        $user->update(['client_id' => $independentClient->id]);
+                    // Not in local DB yet — try finding in master account sub-users
+                    $instanceData = $this->findUserInInstances(0, $request->email);
+
+                    if ($instanceData) {
+                        [$instance, $subUserData] = $instanceData;
+                        $name = trim(($subUserData['first_name'] ?? '') . ' ' . ($subUserData['last_name'] ?? '')) ?: $request->email;
+
+                        $user = User::create([
+                            'name'                     => $name,
+                            'email'                    => $request->email,
+                            'navixy_user_id'           => $subUserData['id'] ?? 0,
+                            'navixy_account_id'        => 0,
+                            'navixy_instance'          => $instance,
+                            'navixy_security_group_id' => $subUserData['security_group_id'] ?? null,
+                            'client_id'                => $subUserData['_client_id'] ?? null,
+                            'role'                     => User::ROLE_CLIENT,
+                            'is_active'                => true,
+                        ]);
+                    }
+
+                    if (!$user) {
+                        // Last resort — check if this is an independent client master account
+                        // These users authenticate directly against their own Navixy account
+                        // and won't appear in any sub-user list
+                        $independentClient = $this->findIndependentClientByEmail($request->email);
+
+                        if ($independentClient) {
+                            // Check if user already exists by email (may have been created before)
+                            $user = User::where('email', $request->email)->first();
+
+                            if (!$user) {
+                                $user = User::create([
+                                    'name'              => $request->email,
+                                    'email'             => $request->email,
+                                    // Master account users don't have a navixy_user_id — use null
+                                    // to avoid unique constraint violation (multiple masters = multiple nulls)
+                                    'navixy_user_id'    => $navixy['user_id'] ?: null,
+                                    'navixy_account_id' => $navixy['account_id'] ?: null,
+                                    'navixy_instance'   => $independentClient->navixy_instance,
+                                    'client_id'         => $independentClient->id,
+                                    'role'              => User::ROLE_CLIENT,
+                                    'is_active'         => true,
+                                ]);
+                            } else {
+                                // Update existing user with client_id if missing
+                                if (!$user->client_id) {
+                                    $user->update(['client_id' => $independentClient->id]);
+                                }
+                            }
+                        }
+                    }
+
+                    if (!$user) {
+                        return back()
+                            ->withErrors(['email' => 'Your account is not registered. Contact Bantu Track support.'])
+                            ->withInput(['email' => $request->email]);
                     }
                 }
             }
-            }
-
-            if (!$user) {
-                return back()
-                    ->withErrors(['email' => 'Your account is not registered. Contact Bantu Track support.'])
-                    ->withInput(['email' => $request->email]);
-            }
         }
-}
 
         // ── Step 3: Create session ────────────────────────────────────────────
         Auth::login($user, $request->boolean('remember'));
@@ -177,24 +214,24 @@ class AuthController extends Controller
         [$instance, $subUserData] = $instanceData;
 
         // Use client directly if found via independent account search
-// Otherwise find by security_group_id (master account sub-users)
-$client = $subUserData['_client']
-    ?? \Modules\AdmmInventory\Models\Client::where('navixy_security_group_id', $subUserData['security_group_id'])
-        ->where('navixy_instance', $instance)
-        ->first();
+        // Otherwise find by security_group_id (master account sub-users)
+        $client = $subUserData['_client']
+            ?? \Modules\AdmmInventory\Models\Client::where('navixy_security_group_id', $subUserData['security_group_id'])
+                ->where('navixy_instance', $instance)
+                ->first();
 
-$name = trim(($subUserData['first_name'] ?? '') . ' ' . ($subUserData['last_name'] ?? '')) ?: $email;
+        $name = trim(($subUserData['first_name'] ?? '') . ' ' . ($subUserData['last_name'] ?? '')) ?: $email;
 
-$user = User::create([
-    'name'                     => $name,
-    'email'                    => $email,
-    'navixy_user_id'           => $navixyUserId,
-    'navixy_account_id'        => $navixyData['account_id'] ?? 0,
-    'navixy_instance'          => $instance,
-    'navixy_security_group_id' => $subUserData['security_group_id'] ?? null,
-    'role'                     => User::ROLE_CLIENT,
-    'is_active'                => (bool) ($subUserData['activated'] ?? true),
-]);
+        $user = User::create([
+            'name'                     => $name,
+            'email'                    => $email,
+            'navixy_user_id'           => $navixyUserId,
+            'navixy_account_id'        => $navixyData['account_id'] ?? 0,
+            'navixy_instance'          => $instance,
+            'navixy_security_group_id' => $subUserData['security_group_id'] ?? null,
+            'role'                     => User::ROLE_CLIENT,
+            'is_active'                => (bool) ($subUserData['activated'] ?? true),
+        ]);
 
         Log::info('AuthController: auto-created local user', [
             'user_id'  => $user->id,
@@ -267,7 +304,7 @@ $user = User::create([
         return null;
     }
 
-        /**
+    /**
      * Check if the email belongs to an independent client's Navixy account
      * by fetching user info using their stored API key.
      */
