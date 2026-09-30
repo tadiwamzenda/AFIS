@@ -16,7 +16,12 @@ class SyncClientFleetJob implements ShouldQueue, ShouldBeUnique
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public int $tries   = 3;
-    public int $timeout = 120;
+    // Confirmed via two independent real production runs (cold-start:
+    // 10m22s, steady-state: 9m49s) — ZETDC (899 trackers) genuinely takes
+    // ~10 min per sync, consistently. Almost certainly cumulative
+    // rate-limited Navixy API call time across 899 individual trackers,
+    // not a one-off. 1200s gives real margin above the observed worst case.
+    public int $timeout = 1200;
 
     public function __construct(
         public Client $client,
