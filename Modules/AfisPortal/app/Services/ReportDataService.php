@@ -213,8 +213,8 @@ class ReportDataService
             ->whereBetween('start_time', [$from, $to])
             ->selectRaw('
                 tracker_id,
-                MAX(CASE WHEN max_speed_kmh BETWEEN ? AND 195 THEN max_speed_kmh ELSE NULL END) as max_speed,
-                SUM(CASE WHEN max_speed_kmh BETWEEN ? AND 195 THEN 1 ELSE 0 END) as speeding_trips
+                MAX(CASE WHEN max_speed_kmh BETWEEN ? AND 165 THEN max_speed_kmh ELSE NULL END) as max_speed,
+                SUM(CASE WHEN max_speed_kmh BETWEEN ? AND 165 THEN 1 ELSE 0 END) as speeding_trips
             ', [$this->speedLimit, $this->speedLimit])
             ->groupBy('tracker_id')
             ->get()
@@ -393,7 +393,7 @@ class ReportDataService
             ->whereIn('tracker_id', $trackerIds)
             ->whereBetween('start_time', [$from, $to])
             ->where('max_speed_kmh', '>=', $this->speedLimit)
-            ->where('max_speed_kmh', '<', 195) // GPS-error exclusion, same boundary as the fleet-wide rule
+            ->where('max_speed_kmh', '<', 165) // GPS-error exclusion, same boundary as the fleet-wide rule
             ->selectRaw('tracker_id, DATE(start_time) as day, MAX(max_speed_kmh) as day_max_speed, COUNT(*) as day_frequency')
             ->groupBy('tracker_id', DB::raw('DATE(start_time)'))
             ->get();
@@ -408,7 +408,7 @@ class ReportDataService
                 $worstTripThatDay = AfisTrip::where('tracker_id', $row->tracker_id)
                     ->whereDate('start_time', $row->day)
                     ->where('max_speed_kmh', '>=', $this->speedLimit)
-                    ->where('max_speed_kmh', '<', 195)
+                    ->where('max_speed_kmh', '<', 165)
                     ->orderByDesc('max_speed_kmh')
                     ->first();
 
