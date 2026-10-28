@@ -222,8 +222,8 @@ $clientGroupIds = AfisTrackerGroup::where('client_id', $client->id)
                                 'start_time'        => $startTime,
                                 'end_time'          => $endTime,
                                 'distance_km'       => $trip['length'] ?? 0,
-                                'avg_speed_kmh'     => min($trip['avg_speed'] ?? 0, 200),
-                                'max_speed_kmh'     => min($trip['max_speed'] ?? 0, 200),
+                                'avg_speed_kmh'     => min($trip['avg_speed'] ?? 0, 165),
+                                'max_speed_kmh'     => min($trip['max_speed'] ?? 0, 165),
                                 'duration_minutes'  => $durationMinutes,
                             ]
                         );
