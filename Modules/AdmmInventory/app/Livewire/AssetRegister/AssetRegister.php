@@ -117,8 +117,41 @@ class AssetRegister extends Component
             entityId:   $id,
         );
 
-        $record->delete();
+                $record->delete();
         unset($this->changes[$id]);
+    }
+
+    // ─── Delete several rows at once (checkbox selection) ────────────────────
+    public function deleteSelected(array $ids): void
+    {
+        $ids = array_values(array_unique(array_map('intval', $ids)));
+        if (empty($ids)) return;
+
+        $deleted = 0;
+
+        \Illuminate\Support\Facades\DB::transaction(function () use ($ids, &$deleted) {
+            foreach (AssetRecord::whereIn('id', $ids)->get() as $record) {
+                app(AuditLogService::class)->record(
+                    event:      'asset_record.deleted',
+                    module:     'AdmmInventory',
+                    data:       [
+                        'imei'   => $record->gps_device_imei,
+                        'client' => $record->client,
+                        'reg_no' => $record->vehicle_reg_no,
+                        'bulk'   => true,
+                    ],
+                    entityType: AssetRecord::class,
+                    entityId:   $record->id,
+                );
+
+                $record->delete();
+                unset($this->changes[$record->id]);
+                $deleted++;
+            }
+        });
+
+        $this->hasChanges = !empty($this->changes);
+        session()->flash('success', "{$deleted} record(s) deleted.");
     }
 
     // ─── Export Excel ─────────────────────────────────────────────────
