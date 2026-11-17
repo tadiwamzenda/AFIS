@@ -34,9 +34,21 @@ Route::middleware(['auth'])->prefix('admin/admm')->name('admin.admm.')->group(fu
     Route::get('/asset-stock/export-pdf', [\Modules\AdmmInventory\Http\Controllers\StockManagementController::class, 'exportPdf'])
     ->name('asset-stock.export-pdf');
 
-    // Technicians and CSV imports
+        // Technicians and CSV imports (built)
     Route::get('/technicians', fn () => view('admminventory::technicians.index'))->name('technicians.index');
     Route::get('/inventory-import', fn () => view('admminventory::imports.index'))->name('inventory-import.index');
+
+    // Placeholders: each is replaced by the real screen when its step is built
+        $soon = fn (string $title, string $step) => fn () => view('admminventory::placeholders.coming-soon', ['title' => $title, 'step' => $step]);
+
+    Route::get('/pairing',           $soon('Hardware Pairing', 'B'))->name('pairing.index');
+    Route::get('/technician-stock',  $soon('Technician Stock', 'C'))->name('technician-stock.index');
+    Route::get('/unpaired-sims',     $soon('Unpaired SIMs', 'C'))->name('unpaired-sims.index');
+    Route::get('/available-devices', $soon('Available Devices', 'C'))->name('available-devices.index');
+    Route::get('/faulty-stock',      $soon('Faulty Devices & SIMs', 'C'))->name('faulty-stock.index');
+    Route::get('/installations/new', $soon('Log Installation', 'D'))->name('installations.create');
+    Route::get('/installations',     $soon('Installation Lookup', 'D'))->name('installations.index');
+    Route::get('/vehicle-notes',     $soon('Vehicle Notes', 'E'))->name('vehicle-notes.index');
     
     });
 
