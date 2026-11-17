@@ -19,8 +19,7 @@ class InstallationEvent extends Model
     protected $casts = ['created_at' => 'datetime'];
 
     const TYPES = [
-        'paired', 'assigned', 'installed', 'repair_swap',
-        'uncoupled', 'installer_changed', 'edited',
+        'paired', 'unpaired', 'assigned', 'installed', 'repair_swap',
     ];
 
     public function device(): BelongsTo

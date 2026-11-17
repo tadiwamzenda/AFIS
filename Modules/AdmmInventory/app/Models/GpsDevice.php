@@ -44,7 +44,7 @@ class GpsDevice extends Model
         return $this->belongsTo(SimCard::class);
     }
 
-    public function technician(): BelongsTo
+    public function assignedTechnician(): BelongsTo
     {
         return $this->belongsTo(Technician::class, 'technician_id');
     }

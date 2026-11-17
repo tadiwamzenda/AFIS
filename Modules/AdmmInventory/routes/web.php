@@ -41,7 +41,7 @@ Route::middleware(['auth'])->prefix('admin/admm')->name('admin.admm.')->group(fu
     // Placeholders: each is replaced by the real screen when its step is built
         $soon = fn (string $title, string $step) => fn () => view('admminventory::placeholders.coming-soon', ['title' => $title, 'step' => $step]);
 
-    Route::get('/pairing',           $soon('Hardware Pairing', 'B'))->name('pairing.index');
+    Route::get('/pairing', fn () => view('admminventory::pairing.index'))->name('pairing.index');
     Route::get('/technician-stock',  $soon('Technician Stock', 'C'))->name('technician-stock.index');
     Route::get('/unpaired-sims',     $soon('Unpaired SIMs', 'C'))->name('unpaired-sims.index');
     Route::get('/available-devices', $soon('Available Devices', 'C'))->name('available-devices.index');
