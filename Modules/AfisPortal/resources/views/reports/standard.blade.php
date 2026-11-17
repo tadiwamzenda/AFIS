@@ -132,41 +132,34 @@
 </table>
 
 @if(count($groups) > 1)
-{{-- Sub-group breakdown — groups as COLUMNS, metrics as ROWS --}}
+{{-- Sub-group breakdown — one ROW per sub-group so any number of groups fits the page width --}}
 <div class="section-title" style="margin-top:10px;">SUB-GROUP PERFORMANCE</div>
 <table>
     <thead>
         <tr>
-            <th class="text-left" style="width:120px;">ASPECT</th>
-            @foreach($groups as $group)
-            <th>{{ strtoupper($group['name']) }}</th>
-            @endforeach
+            <th class="text-left">SUB-GROUP</th>
+            <th style="width:70px;">VEHICLES</th>
+            <th style="width:100px;">TOTAL MILEAGE (km)</th>
+            <th style="width:110px;">WEEKENDS &amp; HOLIDAYS (km)</th>
+            <th style="width:100px;">AFTER HOURS (km)</th>
         </tr>
     </thead>
     <tbody>
+        @foreach($groups as $group)
         <tr>
-            <td class="text-left bold">Fleet Size (vehicles)</td>
-            @foreach($groups as $group)
+            <td class="text-left bold">{{ strtoupper($group['name']) }}</td>
             <td class="bold">{{ $group['count'] }}</td>
-            @endforeach
-        </tr>
-        <tr>
-            <td class="text-left bold">Total Mileage</td>
-            @foreach($groups as $group)
             <td>{{ number_format($group['mileage'], 0) }}</td>
-            @endforeach
-        </tr>
-        <tr>
-            <td class="text-left bold">Weekends and Holidays</td>
-            @foreach($groups as $group)
             <td class="{{ $group['weekend_km'] > 0 ? 'highlight' : '' }}">{{ number_format($group['weekend_km'], 0) }}</td>
-            @endforeach
-        </tr>
-        <tr>
-            <td class="text-left bold">After Hours (km)</td>
-            @foreach($groups as $group)
             <td class="{{ $group['after_hrs'] > 0 ? 'highlight' : '' }}">{{ number_format($group['after_hrs'], 0) }}</td>
-            @endforeach
+        </tr>
+        @endforeach
+        <tr>
+            <td class="text-left bold">TOTAL</td>
+            <td class="bold">{{ collect($groups)->sum('count') }}</td>
+            <td class="bold">{{ number_format(collect($groups)->sum('mileage'), 0) }}</td>
+            <td class="bold">{{ number_format(collect($groups)->sum('weekend_km'), 0) }}</td>
+            <td class="bold">{{ number_format(collect($groups)->sum('after_hrs'), 0) }}</td>
         </tr>
     </tbody>
 </table>
