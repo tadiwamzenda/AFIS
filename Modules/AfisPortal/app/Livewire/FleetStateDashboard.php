@@ -6,6 +6,7 @@ use Carbon\Carbon;
 use Livewire\Component;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
+use Modules\AdmmInventory\Models\VehicleNote;
 use Modules\AfisPipeline\Models\AfisTracker;
 use Modules\AfisPipeline\Models\AfisDeviceAlert;
 use Modules\AfisPipeline\Models\AfisTrackerGroup;
@@ -24,6 +25,14 @@ class FleetStateDashboard extends Component
     public string $reportSearch   = '';
     public array  $comments       = [];
     public array  $resolutions    = [];
+
+    // Vehicle status notes
+    public bool   $hideNoted   = false;     // hide OFFLINE vehicles that have an active note
+    public $noteTrackerId      = null;      // vehicle whose "add note" panel is open
+    public string $noteTag     = 'garage_repairs';
+    public string $noteText    = '';
+    public string $noteExpires = '';
+    public string $noteError   = '';
 
     public function mount(int $clientId): void
     {
@@ -121,6 +130,98 @@ class FleetStateDashboard extends Component
             : 'No changes to save.');
     }
 
+    // ─── Vehicle status notes (BT staff write, everyone on the page reads) ───
+
+    private function isStaff(): bool
+    {
+        return (bool) Auth::user()?->isBtStaff();
+    }
+
+    public function openNote(int $trackerId): void
+    {
+        abort_unless($this->isStaff(), 403);
+
+        if ($this->noteTrackerId === $trackerId) {
+            $this->closeNote();
+            return;
+        }
+
+        abort_unless(AfisTracker::where('client_id', $this->clientId)->whereKey($trackerId)->exists(), 404);
+
+        $this->noteTrackerId = $trackerId;
+        $this->noteTag = 'garage_repairs';
+        $this->noteText = $this->noteExpires = $this->noteError = '';
+    }
+
+    public function closeNote(): void
+    {
+        $this->noteTrackerId = null;
+        $this->noteError = '';
+    }
+
+    public function saveNote(): void
+    {
+        abort_unless($this->isStaff(), 403);
+        $this->noteError = '';
+
+        $text = trim($this->noteText);
+        if (!$this->noteTrackerId
+            || !AfisTracker::where('client_id', $this->clientId)->whereKey((int) $this->noteTrackerId)->exists()) {
+            $this->noteError = 'Vehicle not found.';
+            return;
+        }
+        if (!array_key_exists($this->noteTag, VehicleNote::TAGS)) {
+            $this->noteError = 'Choose a tag.';
+            return;
+        }
+        if (mb_strlen($text) < 3 || mb_strlen($text) > 500) {
+            $this->noteError = 'Write a note of 3 to 500 characters.';
+            return;
+        }
+        $expires = null;
+        if ($this->noteExpires !== '') {
+            try {
+                $expires = Carbon::parse($this->noteExpires)->toDateString();
+            } catch (\Throwable) {
+                $this->noteError = 'Invalid review-by date.';
+                return;
+            }
+            if ($expires < now()->timezone('Africa/Harare')->toDateString()) {
+                $this->noteError = 'The review-by date cannot be in the past.';
+                return;
+            }
+        }
+
+        // A new note replaces the previous active one (the old one stays as history)
+        VehicleNote::active()->where('tracker_id', $this->noteTrackerId)
+            ->update(['resolved_at' => now(), 'resolved_by' => Auth::id()]);
+
+        VehicleNote::create([
+            'tracker_id' => (int) $this->noteTrackerId,
+            'client_id'  => $this->clientId,
+            'tag'        => $this->noteTag,
+            'note'       => $text,
+            'expires_at' => $expires,
+            'created_by' => Auth::id(),
+        ]);
+
+        $this->closeNote();
+    }
+
+    public function resolveNote(int $noteId): void
+    {
+        abort_unless($this->isStaff(), 403);
+
+        VehicleNote::active()->where('client_id', $this->clientId)->whereKey($noteId)
+            ->update(['resolved_at' => now(), 'resolved_by' => Auth::id()]);
+    }
+
+    private function activeNotes(): \Illuminate\Support\Collection
+    {
+        // oldest first, so keyBy keeps the newest note per vehicle
+        return VehicleNote::active()->where('client_id', $this->clientId)->orderBy('id')->get()->keyBy('tracker_id');
+    }
+
     public function deleteReport(int $id): void
     {
         $report = AfisOfflineReportFile::findOrFail($id);
@@ -129,7 +230,7 @@ class FleetStateDashboard extends Component
         session()->flash('success', 'Report deleted.');
     }
 
-    private function buildVehicleStates(): array
+    private function buildVehicleStates($notes): array
     {
         $trackers = AfisTracker::where('client_id', $this->clientId)
             ->when($this->search, fn($q) => $q->where('label', 'like', "%{$this->search}%"))
@@ -185,11 +286,16 @@ class FleetStateDashboard extends Component
                 'seconds'     => $seconds,
                 'bucket'      => $bucket,
                 'incident_id' => $incident?->id,
+                'note'        => $notes->get($tracker->id),
             ];
         }
 
         if ($this->filter !== 'all') {
             $vehicles = array_values(array_filter($vehicles, fn($v) => $v['status'] === $this->filter));
+        }
+
+        if ($this->hideNoted) {
+            $vehicles = array_values(array_filter($vehicles, fn($v) => !($v['status'] === 'offline' && $v['note'])));
         }
 
         if ($this->durationFilter !== '') {
@@ -248,7 +354,13 @@ class FleetStateDashboard extends Component
         $onlineCount  = $allTrackers->where('online_status', 'online')->count();
         $offlineCount = $allTrackers->where('online_status', 'offline')->count();
 
-        $vehicles = $this->view === 'states' ? $this->buildVehicleStates() : [];
+        $notes = $this->activeNotes();
+        $notedOfflineCount = $allTrackers->where('online_status', 'offline')->filter(fn($t) => $notes->has($t->id))->count();
+        $isStaff   = $this->isStaff();
+        $tags      = VehicleNote::TAGS;
+        $noteUsers = \App\Models\User::whereIn('id', $notes->pluck('created_by')->filter()->unique())->pluck('name', 'id');
+
+        $vehicles = $this->view === 'states' ? $this->buildVehicleStates($notes) : [];
 
         // Always computed (cheap count query) so the tab badge is accurate
         // regardless of which tab is active — the full list below is still
@@ -263,7 +375,8 @@ class FleetStateDashboard extends Component
             : collect();
 
         return view('afisportal::livewire.fleet-state-dashboard.index', compact(
-            'vehicles', 'totalCount', 'onlineCount', 'offlineCount', 'reports', 'reportsCount'
+            'vehicles', 'totalCount', 'onlineCount', 'offlineCount', 'reports', 'reportsCount',
+            'notedOfflineCount', 'isStaff', 'tags', 'noteUsers'
         ));
     }
 }

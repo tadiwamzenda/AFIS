@@ -57,6 +57,10 @@
                 <p class="text-xs text-gray-400 mt-0.5">Auto-refreshes every 60 seconds</p>
             </div>
             <div class="flex items-center gap-3 flex-wrap">
+                <label class="inline-flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+                    <input type="checkbox" wire:model.live="hideNoted" class="rounded border-gray-300">
+                    Hide offline vehicles with notes ({{ $notedOfflineCount }})
+                </label>
                 <input wire:model.live.debounce.300ms="search"
                     type="text" placeholder="Search vehicle..."
                     class="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-400 w-44">
@@ -107,6 +111,7 @@
                         <th class="px-4 py-3 text-center">Duration in state</th>
                         <th class="px-4 py-3 text-center">Comment</th>
                         <th class="px-4 py-3 text-left">Resolution</th>
+                        <th class="px-4 py-3 text-left">Vehicle note</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-50">
@@ -164,7 +169,48 @@
                                 <span class="text-xs text-gray-400">—</span>
                             @endif
                         </td>
+                        <td class="px-4 py-3 text-xs">
+                            @if($v['note'])
+                                <span class="inline-block px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-medium">{{ $tags[$v['note']->tag] ?? $v['note']->tag }}</span>
+                                <span class="text-gray-700">{{ $v['note']->note }}</span>
+                                <span class="block text-gray-400 mt-0.5">
+                                    {{ $noteUsers[$v['note']->created_by] ?? '' }}
+                                    {{ $v['note']->created_at?->timezone('Africa/Harare')->format('d M H:i') }}
+                                    @if($v['note']->expires_at) · review by {{ $v['note']->expires_at->format('d M Y') }} @endif
+                                </span>
+                            @endif
+                            @if($isStaff)
+                                <span class="block mt-1 space-x-2">
+                                    <button type="button" wire:click="openNote({{ $v['id'] }})" class="text-blue-600 hover:underline">{{ $v['note'] ? 'Replace note' : 'Add note' }}</button>
+                                    @if($v['note'])
+                                        <button type="button" wire:click="resolveNote({{ $v['note']->id }})" class="text-green-700 hover:underline">Resolve</button>
+                                    @endif
+                                </span>
+                            @endif
+                        </td>
                     </tr>
+                    @if($isStaff && $noteTrackerId === $v['id'])
+                    <tr class="bg-gray-50">
+                        <td colspan="8" class="px-4 py-3">
+                            @if($noteError)<p class="text-xs text-red-600 mb-2">{{ $noteError }}</p>@endif
+                            <div class="flex flex-wrap items-end gap-3">
+                                <label class="text-xs text-gray-600">Tag
+                                    <select wire:model="noteTag" class="mt-1 block px-2 py-1.5 border border-gray-300 rounded-lg text-sm">
+                                        @foreach($tags as $k => $label)<option value="{{ $k }}">{{ $label }}</option>@endforeach
+                                    </select>
+                                </label>
+                                <label class="text-xs text-gray-600 flex-1 min-w-64">Note
+                                    <input type="text" wire:model="noteText" maxlength="500" placeholder="e.g. Offline due to garage repairs" class="mt-1 block w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm">
+                                </label>
+                                <label class="text-xs text-gray-600">Review by (optional)
+                                    <input type="date" wire:model="noteExpires" class="mt-1 block px-2 py-1.5 border border-gray-300 rounded-lg text-sm">
+                                </label>
+                                <button type="button" wire:click="saveNote" style="background:#2563eb;color:#fff" class="px-4 py-1.5 text-sm rounded-lg">Save note</button>
+                                <button type="button" wire:click="closeNote" class="px-4 py-1.5 text-sm border border-gray-300 rounded-lg">Cancel</button>
+                            </div>
+                        </td>
+                    </tr>
+                    @endif
                     @endforeach
                 </tbody>
             </table>
@@ -212,4 +258,4 @@
     </div>
     @endif
 
-</div>
+</div>

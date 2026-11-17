@@ -22,6 +22,7 @@ class AdmmInventoryServiceProvider extends ServiceProvider
         $this->commands([
             TakeStockSnapshotCommand::class,
             EncryptLegacyApiKeysCommand::class,
+            \Modules\AdmmInventory\Console\BackfillInstallationsCommand::class,
         ]);
 
         $this->callAfterResolving(Schedule::class, function (Schedule $schedule) {
@@ -43,8 +44,7 @@ class AdmmInventoryServiceProvider extends ServiceProvider
         \Livewire\Livewire::component('admm-pairing', \Modules\AdmmInventory\Livewire\Pairing\PairingScreen::class);
         \Livewire\Livewire::component('admm-stock-take', \Modules\AdmmInventory\Livewire\StockTake\StockTakeScreen::class);
         \Livewire\Livewire::component('admm-installation-form',   \Modules\AdmmInventory\Livewire\Installations\InstallationForm::class);
-        \Livewire\Livewire::component('admm-installation-lookup', 
-        \Modules\AdmmInventory\Livewire\Installations\InstallationLookup::class);
+        \Livewire\Livewire::component('admm-installation-lookup', \Modules\AdmmInventory\Livewire\Installations\InstallationLookup::class);
     }
 
     public function register(): void
