@@ -116,21 +116,6 @@
     </div>
 </div>
 
-<table>
-    <thead>
-        <tr>
-            <th class="text-left">ASPECT</th>
-            <th>{{ strtoupper($client->name) }}</th>
-        </tr>
-    </thead>
-    <tbody>
-        <tr><td class="text-left">Fleet Size (vehicles)</td><td>{{ $fleet_size }}</td></tr>
-        <tr><td class="text-left">Total Mileage (km)</td><td>{{ number_format($total_mileage, 2) }}</td></tr>
-        <tr><td class="text-left">Weekends and Holidays (km)</td><td>{{ number_format($weekend_km, 2) }}</td></tr>
-        <tr><td class="text-left">After Hours (km)</td><td>{{ number_format($after_hrs_km, 2) }}</td></tr>
-    </tbody>
-</table>
-
 @if(count($groups) > 1)
 {{-- Sub-group breakdown — one ROW per sub-group so any number of groups fits the page width --}}
 <div class="section-title" style="margin-top:10px;">SUB-GROUP PERFORMANCE</div>
