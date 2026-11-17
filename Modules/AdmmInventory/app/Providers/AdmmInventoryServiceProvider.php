@@ -41,6 +41,7 @@ class AdmmInventoryServiceProvider extends ServiceProvider
         \Livewire\Livewire::component('admm-technician-index', \Modules\AdmmInventory\Livewire\Technicians\TechnicianIndex::class);
         \Livewire\Livewire::component('admm-inventory-import', \Modules\AdmmInventory\Livewire\Imports\InventoryImport::class);
         \Livewire\Livewire::component('admm-pairing', \Modules\AdmmInventory\Livewire\Pairing\PairingScreen::class);
+        \Livewire\Livewire::component('admm-stock-take', \Modules\AdmmInventory\Livewire\StockTake\StockTakeScreen::class);
     }
 
     public function register(): void

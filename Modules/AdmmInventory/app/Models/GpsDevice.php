@@ -14,10 +14,12 @@ class GpsDevice extends Model
     'vehicle_registration', 'vehicle_make', 'fleet_number',
     'status', 'client_id', 'sim_card_id',
     'technician', 'technician_id', 'installation_location', 'installed_at', 'notes',
+    'last_verified_at', 'last_verified_by',
     ];
 
     protected $casts = [
         'installed_at' => 'date',
+        'last_verified_at' => 'datetime',
     ];
 
     const DEVICE_TYPES = [

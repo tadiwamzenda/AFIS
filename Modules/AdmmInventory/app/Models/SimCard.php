@@ -27,10 +27,12 @@ class SimCard extends Model
     'iccid', 'msisdn', 'network_provider', 'batch_code', 'bundle_type',
     'bundle_renewal_date', 'status', 'location_context',
     'client_id', 'navixy_tracker_id', 'notes',
+    'last_verified_at', 'last_verified_by',
     ];
 
     protected $casts = [
         'bundle_renewal_date' => 'date',
+        'last_verified_at' => 'datetime',
     ];
 
     public function client(): BelongsTo

@@ -42,10 +42,14 @@ Route::middleware(['auth'])->prefix('admin/admm')->name('admin.admm.')->group(fu
         $soon = fn (string $title, string $step) => fn () => view('admminventory::placeholders.coming-soon', ['title' => $title, 'step' => $step]);
 
     Route::get('/pairing', fn () => view('admminventory::pairing.index'))->name('pairing.index');
-    Route::get('/technician-stock',  $soon('Technician Stock', 'C'))->name('technician-stock.index');
-    Route::get('/unpaired-sims',     $soon('Unpaired SIMs', 'C'))->name('unpaired-sims.index');
-    Route::get('/available-devices', $soon('Available Devices', 'C'))->name('available-devices.index');
-    Route::get('/faulty-stock',      $soon('Faulty Devices & SIMs', 'C'))->name('faulty-stock.index');
+    
+    $stockTake = fn (string $section, string $title) => fn () => view('admminventory::stock-take.index', ['section' => $section, 'title' => $title]);
+
+    Route::get('/technician-stock',  $stockTake('technicians', 'Technician Stock'))->name('technician-stock.index');
+    Route::get('/unpaired-sims',     $stockTake('sims', 'Unpaired SIMs'))->name('unpaired-sims.index');
+    Route::get('/available-devices', $stockTake('devices', 'Available Devices'))->name('available-devices.index');
+    Route::get('/faulty-stock',      $stockTake('faulty', 'Faulty Devices & SIMs'))->name('faulty-stock.index');
+    
     Route::get('/installations/new', $soon('Log Installation', 'D'))->name('installations.create');
     Route::get('/installations',     $soon('Installation Lookup', 'D'))->name('installations.index');
     Route::get('/vehicle-notes',     $soon('Vehicle Notes', 'E'))->name('vehicle-notes.index');
