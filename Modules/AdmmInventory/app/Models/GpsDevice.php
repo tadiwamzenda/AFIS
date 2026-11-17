@@ -13,7 +13,7 @@ class GpsDevice extends Model
     'imei', 'model', 'device_type',
     'vehicle_registration', 'vehicle_make', 'fleet_number',
     'status', 'client_id', 'sim_card_id',
-    'technician', 'installed_at', 'notes',
+    'technician', 'technician_id', 'installation_location', 'installed_at', 'notes',
     ];
 
     protected $casts = [
@@ -27,7 +27,9 @@ class GpsDevice extends Model
 
     const STATUSES = [
         'in_office_stock' => 'In Office Stock',
+        'with_technician' => 'With Technician',
         'installed'       => 'Installed',
+        'faulty'          => 'Faulty',
         'decommissioned'  => 'Decommissioned',
         'lost_stolen'     => 'Lost / Stolen',
     ];
@@ -40,6 +42,11 @@ class GpsDevice extends Model
     public function simCard(): BelongsTo
     {
         return $this->belongsTo(SimCard::class);
+    }
+
+    public function technician(): BelongsTo
+    {
+        return $this->belongsTo(Technician::class, 'technician_id');
     }
 
     public function scopeActive($query)

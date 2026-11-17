@@ -33,6 +33,10 @@ Route::middleware(['auth'])->prefix('admin/admm')->name('admin.admm.')->group(fu
 
     Route::get('/asset-stock/export-pdf', [\Modules\AdmmInventory\Http\Controllers\StockManagementController::class, 'exportPdf'])
     ->name('asset-stock.export-pdf');
+
+    // Technicians and CSV imports
+    Route::get('/technicians', fn () => view('admminventory::technicians.index'))->name('technicians.index');
+    Route::get('/inventory-import', fn () => view('admminventory::imports.index'))->name('inventory-import.index');
     
     });
 

@@ -17,6 +17,7 @@ class SimCard extends Model
     const STATUS_SUSPENDED       = 'suspended';
     const STATUS_DEACTIVATED     = 'deactivated';
     const STATUS_LOST            = 'lost';
+    const STATUS_FAULTY          = 'faulty';
 
     const CONTEXT_CLIENT   = 'client_assigned';
     const CONTEXT_INTERNAL = 'internal_stock';
@@ -87,6 +88,7 @@ class SimCard extends Model
             self::STATUS_SUSPENDED       => 'Suspended',
             self::STATUS_DEACTIVATED     => 'Deactivated',
             self::STATUS_LOST            => 'Lost',
+            self::STATUS_FAULTY          => 'Faulty',
             default                      => ucfirst($this->status),
         };
     }
