@@ -132,6 +132,56 @@
 </table>
 @endif
 
+@if(count($regions) === 1)
+@php
+    $subGroups = collect($summary['vehicles'])
+        ->groupBy('group')
+        ->map(fn($g, $name) => [
+            'name'        => $name,
+            'count'       => $g->count(),
+            'mileage'     => $g->sum('mileage'),
+            'weekend_km'  => $g->sum('weekend_km'),
+            'after_hrs'   => $g->sum('after_hrs_km'),
+            'speeding'    => $g->where('speeding_trips', '>', 0)->count(),
+        ])
+        ->sortBy('name')
+        ->values();
+@endphp
+<div class="section-title">SUB-GROUP PERFORMANCE</div>
+<table>
+    <thead>
+        <tr>
+            <th class="text-left">SUB-GROUP</th>
+            <th>VEHICLES</th>
+            <th>TOTAL MILEAGE (km)</th>
+            <th>WEEKEND/HOLIDAY (km)</th>
+            <th>AFTER HOURS (km)</th>
+            <th>SPEEDING VEHICLES</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach($subGroups as $sg)
+        <tr>
+            <td class="text-left bold">{{ strtoupper($sg['name']) }}</td>
+            <td class="bold">{{ $sg['count'] }}</td>
+            <td>{{ number_format($sg['mileage'], 0) }}</td>
+            <td class="{{ $sg['weekend_km'] > 0 ? 'highlight' : '' }}">{{ number_format($sg['weekend_km'], 0) }}</td>
+            <td class="{{ $sg['after_hrs'] > 0 ? 'highlight' : '' }}">{{ number_format($sg['after_hrs'], 0) }}</td>
+            <td class="{{ $sg['speeding'] > 0 ? 'danger' : 'zero' }}">{{ $sg['speeding'] }}</td>
+        </tr>
+        @endforeach
+        <tr>
+            <td class="text-left bold">TOTAL</td>
+            <td class="bold">{{ $subGroups->sum('count') }}</td>
+            <td class="bold">{{ number_format($subGroups->sum('mileage'), 0) }}</td>
+            <td class="bold">{{ number_format($subGroups->sum('weekend_km'), 0) }}</td>
+            <td class="bold">{{ number_format($subGroups->sum('after_hrs'), 0) }}</td>
+            <td class="bold">{{ $subGroups->sum('speeding') }}</td>
+        </tr>
+    </tbody>
+</table>
+@endif
+
 <div class="footer">
     {{ $client->name }} · Consolidated Fleet Report · {{ $from->format('d M Y') }} to {{ $to->format('d M Y') }} · Generated {{ $generated_at->format('d M Y H:i') }} · Bantu Track AFIS
 </div>
