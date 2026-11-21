@@ -4,12 +4,14 @@
     @if($message)<div class="bg-green-50 border border-green-200 text-green-800 text-sm rounded-lg px-4 py-3">{{ $message }}</div>@endif
     @if($error)<div class="bg-red-50 border border-red-200 text-red-800 text-sm rounded-lg px-4 py-3">{{ $error }}</div>@endif
 
-    <div class="flex flex-wrap gap-3">
+    <div class="flex flex-wrap items-end gap-3">
         <input type="text" wire:model.live.debounce.300ms="search" placeholder="Search IMEI, registration, fleet no, client, ICCID, phone…" class="flex-1 min-w-64 px-3 py-2 border border-gray-300 rounded-lg text-sm">
         <select wire:model.live="clientFilter" class="px-2 py-2 border border-gray-300 rounded-lg text-sm">
             <option value="">All clients</option>
             @foreach($clients as $c)<option value="{{ $c->id }}">{{ $c->name }}</option>@endforeach
         </select>
+        @include('admminventory::partials.period-filter', ['label' => 'Installation date'])
+        <button type="button" wire:click="exportCsv" class="px-3 py-2 text-sm font-medium border border-gray-300 rounded-lg hover:bg-gray-50">Export CSV</button>
     </div>
 
     <datalist id="lk-make">@foreach($makes as $m)<option value="{{ $m }}">@endforeach</datalist>
@@ -140,5 +142,5 @@
         </table>
     </div>
 
-    {{ $rows->links() }}
+    {{ $rows->links('admminventory::pagination.centered') }}
 </div>

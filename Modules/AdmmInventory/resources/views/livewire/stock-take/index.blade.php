@@ -87,6 +87,8 @@
             <label class="inline-flex items-center gap-2 text-sm text-gray-600">
                 <input type="checkbox" wire:model.live="onlyStale"> Only not recently verified
             </label>
+            @include('admminventory::partials.period-filter', ['label' => 'Date added'])
+            <button type="button" wire:click="exportCsv" class="text-sm font-medium px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">Export CSV</button>
         </div>
 
         <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -97,6 +99,7 @@
                         <th class="text-left px-3 py-2">Phone</th>
                         <th class="text-left px-3 py-2">Network</th>
                         <th class="text-left px-3 py-2">Status</th>
+                        <th class="text-left px-3 py-2">Added</th>
                         <th class="text-left px-3 py-2">Last verified</th>
                         <th class="px-4 py-2"></th>
                     </tr>
@@ -108,6 +111,7 @@
                         <td class="px-3 py-2 font-mono">{{ $s->msisdn ?: '—' }}</td>
                         <td class="px-3 py-2">{{ $s->network_provider }}</td>
                         <td class="px-3 py-2">{{ $s->status_label }}</td>
+                        <td class="px-3 py-2">{{ $fmt($s->created_at, 'd M Y') }}</td>
                         <td class="px-3 py-2">{!! $verifiedCell($s->last_verified_at) !!}</td>
                         <td class="px-4 py-2 text-right whitespace-nowrap">
                             <button wire:click="verifySim({{ $s->id }})" class="text-brand-600 hover:underline font-medium">Verify</button>
@@ -116,14 +120,12 @@
                         </td>
                     </tr>
                     @empty
-                    <tr><td colspan="6" class="px-4 py-8 text-center text-gray-400">No unpaired SIM cards match.</td></tr>
+                    <tr><td colspan="7" class="px-4 py-8 text-center text-gray-400">No unpaired SIM cards match.</td></tr>
                     @endforelse
                 </tbody>
             </table>
         </div>
-        @if($rows->count() >= $limit)
-            <p class="text-xs text-gray-400">Showing the first {{ $limit }}. Search or filter to narrow the list.</p>
-        @endif
+        {{ $rows->links('admminventory::pagination.centered') }}
     @endif
 
     {{-- ═══════════ AVAILABLE DEVICES ═══════════ --}}
@@ -136,6 +138,8 @@
             <label class="inline-flex items-center gap-2 text-sm text-gray-600">
                 <input type="checkbox" wire:model.live="onlyStale"> Only not recently verified
             </label>
+            @include('admminventory::partials.period-filter', ['label' => 'Date added'])
+            <button type="button" wire:click="exportCsv" class="text-sm font-medium px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">Export CSV</button>
         </div>
 
         <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -145,6 +149,7 @@
                         <th class="text-left px-4 py-2">IMEI</th>
                         <th class="text-left px-3 py-2">Device type</th>
                         <th class="text-left px-3 py-2">Model</th>
+                        <th class="text-left px-3 py-2">Added</th>
                         <th class="text-left px-3 py-2">Last verified</th>
                         <th class="px-4 py-2"></th>
                     </tr>
@@ -155,6 +160,7 @@
                         <td class="px-4 py-2 font-mono">{{ $d->imei }}</td>
                         <td class="px-3 py-2">{{ $d->device_type ?: '—' }}</td>
                         <td class="px-3 py-2">{{ $d->model ?: '—' }}</td>
+                        <td class="px-3 py-2">{{ $fmt($d->created_at, 'd M Y') }}</td>
                         <td class="px-3 py-2">{!! $verifiedCell($d->last_verified_at) !!}</td>
                         <td class="px-4 py-2 text-right whitespace-nowrap">
                             <button wire:click="verifyDevice({{ $d->id }})" class="text-brand-600 hover:underline font-medium">Verify</button>
@@ -163,24 +169,27 @@
                         </td>
                     </tr>
                     @empty
-                    <tr><td colspan="5" class="px-4 py-8 text-center text-gray-400">No available devices match.</td></tr>
+                    <tr><td colspan="6" class="px-4 py-8 text-center text-gray-400">No available devices match.</td></tr>
                     @endforelse
                 </tbody>
             </table>
         </div>
-        @if($rows->count() >= $limit)
-            <p class="text-xs text-gray-400">Showing the first {{ $limit }}. Search or filter to narrow the list.</p>
-        @endif
+        {{ $rows->links('admminventory::pagination.centered') }}
     @endif
 
     {{-- ═══════════ FAULTY ═══════════ --}}
     @if($section === 'faulty')
+        <div class="flex flex-wrap items-end gap-3">
+            @include('admminventory::partials.period-filter', ['label' => 'Marked faulty'])
+            <button type="button" wire:click="exportCsv" class="text-sm font-medium px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">Export CSV</button>
+        </div>
+
         <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
 
             <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
                 <div class="px-4 py-3 bg-gray-50 border-b border-gray-200 flex justify-between">
                     <p class="text-sm font-semibold text-gray-800">Faulty devices</p>
-                    <span class="text-xs text-gray-500">{{ $devices->count() }}</span>
+                    <span class="text-xs text-gray-500">{{ $devices->total() }}</span>
                 </div>
                 <table class="w-full text-xs">
                     <tbody class="divide-y divide-gray-100">
@@ -188,7 +197,7 @@
                         <tr wire:key="fd-{{ $d->id }}">
                             <td class="px-4 py-2">
                                 <p class="font-mono text-gray-900">{{ $d->imei }}</p>
-                                <p class="text-gray-400">{{ $d->device_type ?: '—' }}{{ $d->simCard ? ' · SIM ' . $d->simCard->iccid : '' }}</p>
+                                <p class="text-gray-400">{{ $d->device_type ?: '—' }}{{ $d->simCard ? ' · SIM ' . $d->simCard->iccid : '' }} · marked {{ $fmt($d->updated_at, 'd M Y') }}</p>
                             </td>
                             <td class="px-4 py-2 text-right whitespace-nowrap">
                                 <button wire:click="returnDevice({{ $d->id }})" wire:confirm="Return this device to office stock?" class="text-brand-600 hover:underline font-medium">Return to stock</button>
@@ -200,12 +209,13 @@
                         @endforelse
                     </tbody>
                 </table>
+                {{ $devices->links('admminventory::pagination.centered') }}
             </div>
 
             <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
                 <div class="px-4 py-3 bg-gray-50 border-b border-gray-200 flex justify-between">
                     <p class="text-sm font-semibold text-gray-800">Faulty SIM cards</p>
-                    <span class="text-xs text-gray-500">{{ $sims->count() }}</span>
+                    <span class="text-xs text-gray-500">{{ $sims->total() }}</span>
                 </div>
                 <table class="w-full text-xs">
                     <tbody class="divide-y divide-gray-100">
@@ -213,7 +223,7 @@
                         <tr wire:key="fs-{{ $s->id }}">
                             <td class="px-4 py-2">
                                 <p class="font-mono text-gray-900">{{ $s->iccid }}</p>
-                                <p class="text-gray-400">{{ $s->msisdn ?: 'No phone number' }} · {{ $s->network_provider }}</p>
+                                <p class="text-gray-400">{{ $s->msisdn ?: 'No phone number' }} · {{ $s->network_provider }} · marked {{ $fmt($s->updated_at, 'd M Y') }}</p>
                             </td>
                             <td class="px-4 py-2 text-right whitespace-nowrap">
                                 <button wire:click="returnSim({{ $s->id }})" wire:confirm="Return this SIM card to stock?" class="text-brand-600 hover:underline font-medium">Return to stock</button>
@@ -225,6 +235,7 @@
                         @endforelse
                     </tbody>
                 </table>
+                {{ $sims->links('admminventory::pagination.centered') }}
             </div>
         </div>
         <p class="text-xs text-gray-400">Hardware removed from a vehicle because of a fault lands here when the Installations screens are added.</p>

@@ -4,6 +4,7 @@ namespace Modules\AdmmInventory\Livewire\Installations;
 
 use Livewire\Component;
 use Livewire\WithPagination;
+use Modules\AdmmInventory\Livewire\Concerns\HasPeriodFilter;
 use Modules\AdmmInventory\Models\Client;
 use Modules\AdmmInventory\Models\GpsDevice;
 use Modules\AdmmInventory\Models\InstallationEvent;
@@ -12,7 +13,9 @@ use Modules\AdmmInventory\Services\InstallationService;
 
 class InstallationLookup extends Component
 {
-    use WithPagination;
+    use WithPagination, HasPeriodFilter;
+
+    private const PER_PAGE = 25;
 
     public string $search = '';
     public $clientFilter = '';
@@ -128,12 +131,13 @@ class InstallationLookup extends Component
         }
     }
 
-    public function render()
+    /** One query for the screen and the CSV, so both always agree. */
+    private function query(): \Illuminate\Database\Eloquent\Builder
     {
         $term = trim($this->search);
         $key  = InstallationService::regKey($term);
 
-        $rows = GpsDevice::with(['client', 'simCard', 'assignedTechnician'])
+        $q = GpsDevice::with(['client', 'simCard', 'assignedTechnician'])
             ->where('status', 'installed')
             ->when($this->clientFilter !== '' && $this->clientFilter !== null, fn ($q) => $q->where('client_id', (int) $this->clientFilter))
             ->when($term !== '', function ($q) use ($term, $key) {
@@ -147,9 +151,53 @@ class InstallationLookup extends Component
                         $w->orWhereRaw("UPPER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(vehicle_registration,' ',''),'-',''),'.',''),'/',''),'_','')) LIKE ?", ["%{$key}%"]);
                     }
                 });
-            })
-            ->orderByDesc('installed_at')->orderByDesc('id')
-            ->paginate(25);
+            });
+
+        // installed_at is a DATE column
+        return $this->applyPeriod($q, 'installed_at', true)
+            ->orderByDesc('installed_at')->orderByDesc('id');
+    }
+
+    public function exportCsv()
+    {
+        abort_unless(auth()->user()?->isBtStaff(), 403);
+
+        $q = $this->query();
+        if ($this->periodError) {
+            return null;
+        }
+
+        $name = 'installations_' . now()->timezone('Africa/Harare')->format('Ymd_Hi') . '.csv';
+
+        return response()->streamDownload(function () use ($q) {
+            $out = fopen('php://output', 'w');
+            fputcsv($out, ['Registration', 'Fleet number', 'Client', 'Make / model', 'IMEI', 'Device type', 'ICCID', 'Phone', 'Network', 'Installation date', 'Installer', 'Location in vehicle'], ',', '"', '');
+
+            $q->chunk(500, function ($rows) use ($out) {
+                foreach ($rows as $d) {
+                    fputcsv($out, [
+                        $this->csvSafe($d->vehicle_registration),
+                        $this->csvSafe($d->fleet_number),
+                        $this->csvSafe($d->client?->name),
+                        $this->csvSafe($d->vehicle_make),
+                        $d->imei,
+                        $this->csvSafe($d->device_type),
+                        $d->simCard?->iccid,
+                        $d->simCard?->msisdn,
+                        $d->simCard?->network_provider,
+                        $d->installed_at?->format('Y-m-d'),
+                        $this->csvSafe($d->assignedTechnician?->name ?? $d->technician),
+                        $this->csvSafe($d->installation_location),
+                    ], ',', '"', '');
+                }
+            });
+            fclose($out);
+        }, $name, ['Content-Type' => 'text/csv']);
+    }
+
+    public function render()
+    {
+        $rows = $this->query()->paginate(self::PER_PAGE);
 
         $history = collect();
         if ($this->activeId && $this->panel === 'history') {
