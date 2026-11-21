@@ -33,7 +33,9 @@
                 <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Offline</p>
             </div>
             <p class="text-3xl font-bold {{ $view === 'states' && $filter === 'offline' ? 'text-red-700' : 'text-gray-800' }}">{{ $offlineCount }}</p>
-            <p class="text-xs text-gray-400 mt-1">{{ $totalCount > 0 ? round(($offlineCount / $totalCount) * 100) : 0 }}% of fleet</p>
+            <p class="text-xs text-gray-400 mt-1">{{ $totalCount > 0 ? round(($offlineCount / $totalCount) * 100) : 0 }}% of fleet · Functional &amp; Bantu Track
+                @if($excludedCount > 0)<span class="block">+ {{ $excludedCount }} offline not counted (client / inactive)</span>@endif
+            </p>
         </button>
 
         <button wire:click="setView('reports')"
@@ -72,9 +74,17 @@
                 <select wire:change="setCommentFilter($event.target.value)"
                     class="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-400">
                     <option value="" {{ $commentFilter === '' ? 'selected' : '' }}>All comments</option>
-                    <option value="Accident" {{ $commentFilter === 'Accident' ? 'selected' : '' }}>Accident</option>
-                    <option value="Garage" {{ $commentFilter === 'Garage' ? 'selected' : '' }}>Garage</option>
-                    <option value="Functional" {{ $commentFilter === 'Functional' ? 'selected' : '' }}>Functional</option>
+                    @foreach($commentOptions as $opt)
+                        <option value="{{ $opt }}" {{ $commentFilter === $opt ? 'selected' : '' }}>{{ $opt }}</option>
+                    @endforeach
+                </select>
+
+                <select wire:change="setActionPartyFilter($event.target.value)"
+                    class="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-400">
+                    <option value="" {{ $actionPartyFilter === '' ? 'selected' : '' }}>All action parties</option>
+                    @foreach($partyOptions as $opt)
+                        <option value="{{ $opt }}" {{ $actionPartyFilter === $opt ? 'selected' : '' }}>{{ $opt }}</option>
+                    @endforeach
                 </select>
 
                 <button wire:click="saveUpdates"
@@ -83,7 +93,19 @@
                     Update
                 </button>
 
-                <a href="{{ route('admin.afis.fleet.offline-report.generate', ['clientId' => $clientId, 'filter' => $filter, 'duration' => $durationFilter, 'comment' => $commentFilter, 'search' => $search]) }}"
+                <select wire:model.live="reportPeriod" title="Report period"
+                    class="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-400">
+                    <option value="daily">Report: Daily</option>
+                    <option value="weekly">Report: Weekly</option>
+                    <option value="monthly">Report: Monthly</option>
+                    <option value="custom">Report: Custom</option>
+                </select>
+                @if($reportPeriod === 'custom')
+                    <input type="date" wire:model.live="reportFrom" class="px-2 py-1.5 text-sm border border-gray-300 rounded-lg">
+                    <input type="date" wire:model.live="reportTo" class="px-2 py-1.5 text-sm border border-gray-300 rounded-lg">
+                @endif
+
+                <a href="{{ route('admin.afis.fleet.offline-report.generate', ['clientId' => $clientId, 'filter' => $filter, 'duration' => $durationFilter, 'comment' => $commentFilter, 'action_party' => $actionPartyFilter, 'search' => $search, 'period' => $reportPeriod, 'from' => $reportFrom, 'to' => $reportTo]) }}"
                     class="inline-flex items-center gap-1.5 text-sm font-medium text-gray-600 px-3 py-1.5 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
                     Offline Report
@@ -93,7 +115,7 @@
 
         @if(empty($vehicles))
         <div class="px-5 py-10 text-center text-sm text-gray-400">
-            No vehicles found{{ $filter !== 'all' ? ' for filter: ' . $filter : '' }}{{ $durationFilter ? " ({$durationFilter})" : '' }}{{ $commentFilter ? " ({$commentFilter})" : '' }}.
+            No vehicles found{{ $filter !== 'all' ? ' for filter: ' . $filter : '' }}{{ $durationFilter ? " ({$durationFilter})" : '' }}{{ $commentFilter ? " ({$commentFilter})" : '' }}{{ $actionPartyFilter ? " ({$actionPartyFilter})" : '' }}.
         </div>
         @else
         <div class="overflow-x-auto">
@@ -106,12 +128,18 @@
                         <th class="px-4 py-3 text-center">Since</th>
                         <th class="px-4 py-3 text-center">Duration in state</th>
                         <th class="px-4 py-3 text-center">Comment</th>
-                        <th class="px-4 py-3 text-left">Resolution</th>
+                        <th class="px-4 py-3 text-center">Action Party</th>
+                        <th class="px-4 py-3 text-left">Updated</th>
+                        <th class="px-4 py-3 text-center"></th>
                     </tr>
                 </thead>
-                <tbody class="divide-y divide-gray-50">
+                <tbody class="divide-y divide-gray-50" x-data="{ sel: null }">
                     @foreach($vehicles as $v)
-                    <tr class="hover:bg-gray-50 transition-colors {{ $v['status'] === 'offline' ? 'bg-red-50/30' : '' }}">
+                    <tr wire:key="veh-{{ $v['id'] }}"
+                        @click="sel = {{ $v['id'] }}"
+                        :style="sel === {{ $v['id'] }} ? 'background:#fef3c7;box-shadow:inset 0 0 0 2px #fbbf24' : ''"
+                        style="cursor:pointer"
+                        class="hover:bg-gray-50 transition-colors {{ $v['status'] === 'offline' ? 'bg-red-50/30' : '' }}">
                         <td class="px-4 py-3 font-medium text-gray-800">{{ $v['label'] }}</td>
                         <td class="px-4 py-3 text-gray-500 text-xs">{{ $v['group'] }}</td>
                         <td class="px-4 py-3 text-center">
@@ -145,23 +173,49 @@
                                 <select wire:model="comments.{{ $v['incident_id'] }}"
                                     class="text-xs border border-gray-300 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-brand-400">
                                     <option value="">—</option>
-                                    <option value="Accident">Accident</option>
-                                    <option value="Garage">Garage</option>
-                                    <option value="Functional">Functional</option>
+                                    @foreach($commentOptions as $opt)<option value="{{ $opt }}">{{ $opt }}</option>@endforeach
                                 </select>
                             @else
-                                <span class="text-xs text-gray-400" title="Incident not yet recorded — check back after the next alert check cycle">Pending</span>
+                                <select wire:model="pendingComments.{{ $v['id'] }}"
+                                    class="text-xs border border-amber-300 bg-amber-50 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-brand-400">
+                                    <option value="">Pending…</option>
+                                    @foreach($commentOptions as $opt)<option value="{{ $opt }}">{{ $opt }}</option>@endforeach
+                                </select>
                             @endif
                         </td>
-                        <td class="px-4 py-3">
+                        <td class="px-4 py-3 text-center">
                             @if($v['status'] !== 'offline')
                                 <span class="text-xs text-gray-400">n/a</span>
                             @elseif($v['incident_id'])
-                                <input type="text" wire:model="resolutions.{{ $v['incident_id'] }}"
-                                    placeholder="Resolution notes..."
-                                    class="w-full text-xs border border-gray-300 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-brand-400">
+                                <select wire:model="actionParties.{{ $v['incident_id'] }}"
+                                    class="text-xs border border-gray-300 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-brand-400">
+                                    <option value="">—</option>
+                                    @foreach($partyOptions as $opt)<option value="{{ $opt }}">{{ $opt }}</option>@endforeach
+                                </select>
                             @else
-                                <span class="text-xs text-gray-400">—</span>
+                                <select wire:model="pendingParties.{{ $v['id'] }}"
+                                    class="text-xs border border-amber-300 bg-amber-50 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-brand-400">
+                                    <option value="">Pending…</option>
+                                    @foreach($partyOptions as $opt)<option value="{{ $opt }}">{{ $opt }}</option>@endforeach
+                                </select>
+                            @endif
+                        </td>
+                        <td class="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
+                            @if($v['updated_at'])
+                                {{ $v['updated_at'] }}
+                                @if($v['updated_by'])<span class="block text-gray-400">{{ $v['updated_by'] }}</span>@endif
+                            @else
+                                —
+                            @endif
+                        </td>
+                        <td class="px-4 py-3 text-center">
+                            @if($v['status'] === 'offline' && $v['incident_id'])
+                                <button type="button" wire:click="saveVehicle({{ $v['incident_id'] }})"
+                                    class="inline-flex items-center gap-1.5 text-sm font-medium text-white bg-brand-500 hover:bg-brand-600 px-3 py-1.5 rounded-lg transition-colors">Save</button>
+                                    
+                            @elseif($v['status'] === 'offline')
+                                <button type="button" wire:click="savePending({{ $v['id'] }})"
+                                    class="inline-flex items-center gap-1.5 text-sm font-medium text-white bg-brand-500 hover:bg-brand-600 px-3 py-1.5 rounded-lg transition-colors">Save</button>
                             @endif
                         </td>
                     </tr>
@@ -190,6 +244,7 @@
                         @if($report->state_filter !== 'all') · State: {{ ucfirst($report->state_filter) }} @endif
                         @if($report->duration_filter) · Duration: {{ ucfirst($report->duration_filter) }} @endif
                         @if($report->comment_filter) · Comment: {{ $report->comment_filter }} @endif
+                        @if($report->action_party_filter) · Action party: {{ $report->action_party_filter }} @endif
                     </p>
                 </div>
                 <div class="flex items-center gap-2 flex-shrink-0">

@@ -22,6 +22,7 @@ class AdmmInventoryServiceProvider extends ServiceProvider
         $this->commands([
             TakeStockSnapshotCommand::class,
             EncryptLegacyApiKeysCommand::class,
+            \Modules\AdmmInventory\Console\BackfillInstallationsCommand::class,
         ]);
 
         $this->callAfterResolving(Schedule::class, function (Schedule $schedule) {
@@ -38,6 +39,12 @@ class AdmmInventoryServiceProvider extends ServiceProvider
         \Livewire\Livewire::component('admm-accessory-form',  \Modules\AdmmInventory\Livewire\Accessories\AccessoryForm::class);
         \Livewire\Livewire::component('admm-asset-register', \Modules\AdmmInventory\Livewire\AssetRegister\AssetRegister::class);
         \Livewire\Livewire::component('admm-stock-management', \Modules\AdmmInventory\Livewire\StockManagement\StockManagement::class);
+        \Livewire\Livewire::component('admm-technician-index', \Modules\AdmmInventory\Livewire\Technicians\TechnicianIndex::class);
+        \Livewire\Livewire::component('admm-inventory-import', \Modules\AdmmInventory\Livewire\Imports\InventoryImport::class);
+        \Livewire\Livewire::component('admm-pairing', \Modules\AdmmInventory\Livewire\Pairing\PairingScreen::class);
+        \Livewire\Livewire::component('admm-stock-take', \Modules\AdmmInventory\Livewire\StockTake\StockTakeScreen::class);
+        \Livewire\Livewire::component('admm-installation-form',   \Modules\AdmmInventory\Livewire\Installations\InstallationForm::class);
+        \Livewire\Livewire::component('admm-installation-lookup', \Modules\AdmmInventory\Livewire\Installations\InstallationLookup::class);
     }
 
     public function register(): void

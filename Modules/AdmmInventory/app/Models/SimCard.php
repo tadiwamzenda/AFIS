@@ -17,6 +17,7 @@ class SimCard extends Model
     const STATUS_SUSPENDED       = 'suspended';
     const STATUS_DEACTIVATED     = 'deactivated';
     const STATUS_LOST            = 'lost';
+    const STATUS_FAULTY          = 'faulty';
 
     const CONTEXT_CLIENT   = 'client_assigned';
     const CONTEXT_INTERNAL = 'internal_stock';
@@ -26,10 +27,12 @@ class SimCard extends Model
     'iccid', 'msisdn', 'network_provider', 'batch_code', 'bundle_type',
     'bundle_renewal_date', 'status', 'location_context',
     'client_id', 'navixy_tracker_id', 'notes',
+    'last_verified_at', 'last_verified_by',
     ];
 
     protected $casts = [
         'bundle_renewal_date' => 'date',
+        'last_verified_at' => 'datetime',
     ];
 
     public function client(): BelongsTo
@@ -87,6 +90,7 @@ class SimCard extends Model
             self::STATUS_SUSPENDED       => 'Suspended',
             self::STATUS_DEACTIVATED     => 'Deactivated',
             self::STATUS_LOST            => 'Lost',
+            self::STATUS_FAULTY          => 'Faulty',
             default                      => ucfirst($this->status),
         };
     }

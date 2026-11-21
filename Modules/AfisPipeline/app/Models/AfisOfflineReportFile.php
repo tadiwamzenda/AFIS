@@ -13,7 +13,7 @@ class AfisOfflineReportFile extends Model
 
     protected $fillable = [
         'client_id', 'tracker_id', 'title', 'file_path',
-        'state_filter', 'duration_filter', 'comment_filter',
+        'state_filter', 'duration_filter', 'comment_filter', 'action_party_filter',
         'search_term', 'generated_by',
     ];
 

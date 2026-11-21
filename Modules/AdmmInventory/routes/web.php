@@ -33,6 +33,24 @@ Route::middleware(['auth'])->prefix('admin/admm')->name('admin.admm.')->group(fu
 
     Route::get('/asset-stock/export-pdf', [\Modules\AdmmInventory\Http\Controllers\StockManagementController::class, 'exportPdf'])
     ->name('asset-stock.export-pdf');
+
+        // Technicians and CSV imports (built)
+    Route::get('/technicians', fn () => view('admminventory::technicians.index'))->name('technicians.index');
+    Route::get('/inventory-import', fn () => view('admminventory::imports.index'))->name('inventory-import.index');
+
+    // Placeholders: each is replaced by the real screen when its step is built
+        $soon = fn (string $title, string $step) => fn () => view('admminventory::placeholders.coming-soon', ['title' => $title, 'step' => $step]);
+
+    Route::get('/pairing', fn () => view('admminventory::pairing.index'))->name('pairing.index');
+    
+    $stockTake = fn (string $section, string $title) => fn () => view('admminventory::stock-take.index', ['section' => $section, 'title' => $title]);
+
+    Route::get('/technician-stock',  $stockTake('technicians', 'Technician Stock'))->name('technician-stock.index');
+    Route::get('/unpaired-sims',     $stockTake('sims', 'Unpaired SIMs'))->name('unpaired-sims.index');
+    Route::get('/available-devices', $stockTake('devices', 'Available Devices'))->name('available-devices.index');
+    Route::get('/faulty-stock',      $stockTake('faulty', 'Faulty Devices & SIMs'))->name('faulty-stock.index');
+    Route::view('/installations/new', 'admminventory::installations.create')->name('installations.create');
+    Route::view('/installations', 'admminventory::installations.index')->name('installations.index');
     
     });
 

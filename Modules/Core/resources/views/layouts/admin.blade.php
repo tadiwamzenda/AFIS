@@ -61,6 +61,43 @@
                 Asset Stock
                 </a>
 
+                                @include('core::layouts.partials.nav-group', [
+                    'title' => 'Technicians',
+                    'icon'  => 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z',
+                    'links' => [
+                        ['admin.admm.technicians.index',      'Technician List',  'admin.admm.technicians.*'],
+                        ['admin.admm.technician-stock.index', 'Technician Stock', 'admin.admm.technician-stock.*'],
+                    ],
+                ])
+
+                @include('core::layouts.partials.nav-group', [
+                    'title' => 'Devices & SIMs',
+                    'icon'  => 'M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z',
+                    'links' => [
+                        ['admin.admm.inventory-import.index', 'Import Devices & SIMs', 'admin.admm.inventory-import.*'],
+                        ['admin.admm.pairing.index',          'Pairing',               'admin.admm.pairing.*'],
+                    ],
+                ])
+
+                @include('core::layouts.partials.nav-group', [
+                    'title' => 'Stock Take',
+                    'icon'  => 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4',
+                    'links' => [
+                        ['admin.admm.unpaired-sims.index',     'Unpaired SIMs',            'admin.admm.unpaired-sims.*'],
+                        ['admin.admm.available-devices.index', 'Available Devices',        'admin.admm.available-devices.*'],
+                        ['admin.admm.faulty-stock.index',      'Faulty Devices & SIMs',    'admin.admm.faulty-stock.*'],
+                    ],
+                ])
+
+                @include('core::layouts.partials.nav-group', [
+                    'title' => 'Installations',
+                    'icon'  => 'M8 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a1 1 0 001 1h1M5 17a2 2 0 104 0m-4 0a2 2 0 114 0m6 0a2 2 0 104 0m-4 0a2 2 0 114 0',
+                    'links' => [
+                        ['admin.admm.installations.create', 'Log Installation',    'admin.admm.installations.create'],
+                        ['admin.admm.installations.index',  'Installation Lookup', 'admin.admm.installations.index'],
+                    ],
+                ])
+
             </div>
 
             {{-- AFIS --}}

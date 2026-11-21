@@ -14,7 +14,8 @@ Route::middleware('auth')->prefix('admin/afis')->name('admin.afis.')->group(func
     Route::get('/fleet/{clientId}/offline-report', [FleetStateReportController::class, 'offlineReport'])->name('fleet.offline-report');
     Route::get('/fleet/{clientId}/offline-report/generate', [FleetStateReportController::class, 'generateAndSave'])->name('fleet.offline-report.generate');
     Route::get('/offline-reports/{id}/download', [FleetStateReportController::class, 'downloadSaved'])->name('offline-reports.download');
-});
+    Route::get('/overview-report', [FleetStateReportController::class, 'overviewReport'])->name('fleet.overview-report');
+    });
 // Client portal routes
 Route::middleware('auth')->prefix('client')->name('client.')->group(function () {
     Route::get('/dashboard',                [PortalController::class, 'clientDashboard'])->name('dashboard');
