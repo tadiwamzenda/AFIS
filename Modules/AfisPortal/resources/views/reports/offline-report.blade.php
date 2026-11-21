@@ -101,15 +101,16 @@
 <div class="report-title">
     <h1>{{ $client->name }} — Vehicle Offline Incidents Report</h1>
     <div class="sub">
-        {{ $from->format('d M Y') }} to {{ $to->format('d M Y') }} · Generated {{ \Carbon\Carbon::now('Africa/Harare')->format('d M Y H:i') }}
+        {{ $periodLabel ?? 'Period' }} · {{ $from->format('d M Y') }} to {{ $to->format('d M Y') }} · Generated {{ \Carbon\Carbon::now('Africa/Harare')->format('d M Y H:i') }}
     </div>
 </div>
 
-@if($stateFilter !== 'all' || $durationFilter !== '' || ($commentFilter ?? '') !== '' || $search !== '')
+@if($stateFilter !== 'all' || $durationFilter !== '' || ($commentFilter ?? '') !== '' || ($actionPartyFilter ?? '') !== '' || $search !== '')
 <div class="filter-badges">
     @if($stateFilter !== 'all')<span class="filter-badge">State: {{ ucfirst($stateFilter) }}</span>@endif
     @if($durationFilter !== '')<span class="filter-badge">Duration: {{ ucfirst($durationFilter) }}</span>@endif
     @if(($commentFilter ?? '') !== '')<span class="filter-badge">Comment: {{ $commentFilter }}</span>@endif
+    @if(($actionPartyFilter ?? '') !== '')<span class="filter-badge">Action Party: {{ $actionPartyFilter }}</span>@endif
     @if($search !== '')<span class="filter-badge">Search: "{{ $search }}"</span>@endif
 </div>
 @endif
@@ -126,6 +127,7 @@
     <tr><td>Fleet Size (vehicles)</td><td>{{ $fleetSize }}</td></tr>
     <tr><td>Total Offline Incidents ({{ $client->name }})</td><td>{{ $totalIncidents }}</td></tr>
     <tr><td>Currently Still Offline</td><td>{{ $stillOffline }}</td></tr>
+    <tr><td>Offline Now — Functional (Active) &amp; Bantu Track</td><td>{{ $countedOffline ?? '—' }}</td></tr>
     <tr><td>Average Offline Duration</td><td>{{ $avgDuration }}</td></tr>
     <tr><td>Longest Offline Duration</td><td>{{ $longestOffline }}</td></tr>
 </table>
@@ -159,7 +161,7 @@
     <thead>
         <tr>
             <th>VEHICLE REG</th><th>GROUP / LOCATION</th><th>WENT OFFLINE</th><th>CAME ONLINE</th>
-            <th>OFFLINE DURATION</th><th>SEVERITY</th><th>COMMENT</th><th>RESOLUTION</th>
+            <th>OFFLINE DURATION</th><th>SEVERITY</th><th>COMMENT</th><th>ACTION PARTY</th><th>UPDATED</th>
         </tr>
     </thead>
     <tbody>
@@ -172,7 +174,8 @@
             <td style="font-weight:bold;font-family:monospace;">{{ $inc['duration'] }}</td>
             <td><span class="sev-{{ $inc['severity'] }}">{{ strtoupper($inc['severity']) }}</span></td>
             <td>{{ $inc['comment'] ?? '—' }}</td>
-            <td class="{{ !$inc['resolution'] ? 'muted' : '' }}">{{ $inc['resolution'] ?? '—' }}</td>
+            <td>{{ $inc['action_party'] ?? '—' }}</td>
+            <td class="{{ empty($inc['updated_at']) ? 'muted' : '' }}">{{ $inc['updated_at'] ?? '—' }}</td>
         </tr>
         @endforeach
     </tbody>
@@ -181,7 +184,7 @@
 </div>
 
 <div class="footer">
-    Bantu Track · Vehicle Offline Incidents Report · {{ $client->name }} · {{ $from->format('d M Y') }} to {{ $to->format('d M Y') }} · {{ $totalIncidents }} incidents
+    Bantu Track · Vehicle Offline Incidents Report · {{ $client->name }} · {{ $periodLabel ?? 'Period' }} {{ $from->format('d M Y') }} to {{ $to->format('d M Y') }} · {{ $totalIncidents }} incidents
 </div>
 
 </body>

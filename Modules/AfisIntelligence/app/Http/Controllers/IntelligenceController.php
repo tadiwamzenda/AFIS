@@ -2,28 +2,41 @@
 
 namespace Modules\AfisIntelligence\Http\Controllers;
 
+use Modules\AfisPortal\Services\FleetStateCounter;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use Illuminate\Support\Facades\Auth;
 use Modules\AdmmInventory\Models\Client;
 use Modules\AfisPipeline\Models\AfisTracker;
+use Modules\AfisEngine\Models\AfisAiReport;
+
 
 class IntelligenceController extends Controller
 {
     // ─── Admin ───────────────────────────────────────────────────────────────
 
-   public function index()
-    {
-        $clients = Client::active()
-            ->orderBy('name')
-            ->get()
-            ->map(function ($client) {
-                $client->tracker_count = AfisTracker::where('client_id', $client->id)->count();
-                return $client;
-            });
+   public function index(FleetStateCounter $counter)
+{
+    $ids      = Client::active()->pluck('id')->all();
+    $byClient = $counter->byClient($ids);
+    $states   = $counter->forClients($ids);
 
-        return view('afisintelligence::admin.index', compact('clients'));
-    }
+    $clients = Client::active()
+        ->orderBy('name')
+        ->get()
+        ->map(function ($client) use ($byClient) {
+            $client->state = $byClient[$client->id] ?? null;
+            $client->tracker_count = AfisTracker::where('client_id', $client->id)->count();
+            $client->last_intelligence_report = AfisAiReport::where('client_id', $client->id)
+                ->whereIn('report_type', ['fleet_intelligence', 'predictive_intelligence'])
+                ->completed()
+                ->latest()
+                ->first();
+            return $client;
+        });
+
+    return view('afisintelligence::admin.index', compact('clients', 'states'));
+}
 
     public function dashboard(int $clientId)
     {

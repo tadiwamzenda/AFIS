@@ -6,33 +6,32 @@ use Carbon\Carbon;
 use Livewire\Component;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
-use Modules\AdmmInventory\Models\VehicleNote;
 use Modules\AfisPipeline\Models\AfisTracker;
-use Modules\AfisPipeline\Models\AfisDeviceAlert;
 use Modules\AfisPipeline\Models\AfisTrackerGroup;
 use Modules\AfisPipeline\Models\AfisOfflineIncident;
 use Modules\AfisPipeline\Models\AfisOfflineReportFile;
+use Modules\AfisPortal\Services\FleetStateCounter;
 use Modules\AuditLog\Models\AuditLog;
 
 class FleetStateDashboard extends Component
 {
     public int    $clientId;
-    public string $view           = 'states'; // 'states' | 'reports'
-    public string $filter         = 'all';
-    public string $durationFilter = '';
-    public string $commentFilter  = '';
-    public string $search         = '';
-    public string $reportSearch   = '';
-    public array  $comments       = [];
-    public array  $resolutions    = [];
+    public string $view              = 'states'; // 'states' | 'reports'
+    public string $filter            = 'all';
+    public string $durationFilter    = '';
+    public string $commentFilter     = '';
+    public string $actionPartyFilter = '';
+    public string $search            = '';
+    public string $reportSearch      = '';
+    public array  $comments          = [];   // incident id => comment
+    public array  $actionParties     = [];   // incident id => action party
+    public array  $pendingComments   = [];   // tracker id => comment, for offline vehicles with no incident yet
+    public array  $pendingParties    = [];   // tracker id => action party
 
-    // Vehicle status notes
-    public bool   $hideNoted   = false;     // hide OFFLINE vehicles that have an active note
-    public $noteTrackerId      = null;      // vehicle whose "add note" panel is open
-    public string $noteTag     = 'garage_repairs';
-    public string $noteText    = '';
-    public string $noteExpires = '';
-    public string $noteError   = '';
+    // Offline Report period (Daily / Weekly / Monthly / Custom)
+    public string $reportPeriod = 'monthly';
+    public string $reportFrom   = '';
+    public string $reportTo     = '';
 
     public function mount(int $clientId): void
     {
@@ -42,13 +41,17 @@ class FleetStateDashboard extends Component
             $this->view = 'reports';
         }
 
+        $now = Carbon::now('Africa/Harare');
+        $this->reportTo   = $now->toDateString();
+        $this->reportFrom = $now->copy()->subDays(6)->toDateString();
+
         $openIncidents = AfisOfflineIncident::whereHas('tracker', fn($q) => $q->where('client_id', $clientId))
             ->open()
             ->get();
 
         foreach ($openIncidents as $incident) {
-            $this->comments[$incident->id]    = $incident->comment ?? '';
-            $this->resolutions[$incident->id] = $incident->resolution ?? '';
+            $this->comments[$incident->id]     = $incident->comment ?? '';
+            $this->actionParties[$incident->id] = $incident->action_party ?? '';
         }
     }
 
@@ -78,6 +81,14 @@ class FleetStateDashboard extends Component
         }
     }
 
+    public function setActionPartyFilter(string $party): void
+    {
+        $this->actionPartyFilter = $party;
+        if ($party !== '') {
+            $this->filter = 'offline';
+        }
+    }
+
     private function durationBucket(int $seconds): string
     {
         if ($seconds < 3600)   return 'none';
@@ -86,43 +97,155 @@ class FleetStateDashboard extends Component
         return 'weekly';
     }
 
+    /**
+     * Save Comment and Action Party for one incident. Returns true when something changed.
+     * The "last changed" time and user are stamped only when Comment or Action Party changed.
+     */
+    private function persist(int $incidentId, ?string $comment, ?string $party): bool
+    {
+        $incident = AfisOfflineIncident::whereKey($incidentId)
+            ->whereHas('tracker', fn($q) => $q->where('client_id', $this->clientId))
+            ->first();
+        if (!$incident) {
+            return false;
+        }
+
+        $comment = $comment ?: null;
+        $party   = $party ?: null;
+
+        if (($comment !== null && !in_array($comment, AfisOfflineIncident::COMMENTS, true))
+            || ($party !== null && !in_array($party, AfisOfflineIncident::ACTION_PARTIES, true))) {
+            return false;
+        }
+
+        if ($comment === $incident->comment && $party === $incident->action_party) {
+            return false;
+        }
+
+        $before = ['comment' => $incident->comment, 'action_party' => $incident->action_party];
+
+        $incident->update([
+            'comment'           => $comment,
+            'action_party'      => $party,
+            'triage_updated_at' => now(),
+            'triage_updated_by' => Auth::id(),
+        ]);
+
+        AuditLog::create([
+            'event'       => 'offline_incident.updated',
+            'module'      => 'AfisPipeline',
+            'entity_type' => AfisOfflineIncident::class,
+            'entity_id'   => $incident->id,
+            'user_id'     => Auth::id(),
+            'ip_address'  => request()->ip(),
+            'user_agent'  => request()->userAgent(),
+            'created_at'  => now(),
+            'data'        => [
+                'tracker_id'    => $incident->tracker_id,
+                'tracker_label' => $incident->tracker?->label,
+                'before'        => $before,
+                'after'         => ['comment' => $comment, 'action_party' => $party],
+            ],
+        ]);
+
+        return true;
+    }
+
+    /**
+     * An offline vehicle with no incident record yet (shown as "Pending"): create its
+     * open incident with the chosen Comment / Action Party. If the alert check created
+     * one in the meantime, update that instead.
+     */
+    private function persistPending(int $trackerId, ?string $comment, ?string $party): bool
+    {
+        $comment = $comment ?: null;
+        $party   = $party ?: null;
+
+        if ($comment === null && $party === null) {
+            return false;
+        }
+        if (($comment !== null && !in_array($comment, AfisOfflineIncident::COMMENTS, true))
+            || ($party !== null && !in_array($party, AfisOfflineIncident::ACTION_PARTIES, true))) {
+            return false;
+        }
+
+        $tracker = AfisTracker::where('client_id', $this->clientId)->where('online_status', 'offline')->find($trackerId);
+        if (!$tracker) {
+            return false;
+        }
+
+        $existing = AfisOfflineIncident::open()->where('tracker_id', $trackerId)->first();
+        if ($existing) {
+            $this->comments[$existing->id]      = $comment ?? '';
+            $this->actionParties[$existing->id] = $party ?? '';
+            return $this->persist($existing->id, $comment, $party);
+        }
+
+        // offline since: when the tracker went offline, else its last sync, else now (Harare wall-clock, as the pipeline stores it)
+        $since = $this->harareTime($tracker, 'online_status_changed_at')
+              ?? $this->harareTime($tracker, 'last_synced_at')
+              ?? Carbon::now('Africa/Harare');
+
+        $incident = AfisOfflineIncident::create([
+            'tracker_id'        => $trackerId,
+            'client_id'         => $this->clientId,
+            'went_offline_at'   => $since,
+            'comment'           => $comment,
+            'action_party'      => $party,
+            'triage_updated_at' => now(),
+            'triage_updated_by' => Auth::id(),
+        ]);
+
+        $this->comments[$incident->id]      = $comment ?? '';
+        $this->actionParties[$incident->id] = $party ?? '';
+        unset($this->pendingComments[$trackerId], $this->pendingParties[$trackerId]);
+
+        AuditLog::create([
+            'event'       => 'offline_incident.created_manually',
+            'module'      => 'AfisPipeline',
+            'entity_type' => AfisOfflineIncident::class,
+            'entity_id'   => $incident->id,
+            'user_id'     => Auth::id(),
+            'ip_address'  => request()->ip(),
+            'user_agent'  => request()->userAgent(),
+            'created_at'  => now(),
+            'data'        => [
+                'tracker_id'    => $trackerId,
+                'tracker_label' => $tracker->label,
+                'after'         => ['comment' => $comment, 'action_party' => $party],
+            ],
+        ]);
+
+        return true;
+    }
+
+    /** Row Save button for a vehicle that has no incident yet. */
+    public function savePending(int $trackerId): void
+    {
+        $changed = $this->persistPending(
+            $trackerId,
+            $this->pendingComments[$trackerId] ?? null,
+            $this->pendingParties[$trackerId] ?? null
+        );
+
+        session()->flash('success', $changed ? 'Vehicle updated.' : 'Choose a Comment or Action Party first.');
+    }
+
+    /** Update button: save every vehicle on the page. */
     public function saveUpdates(): void
     {
         $changed = 0;
 
-        foreach ($this->comments as $incidentId => $comment) {
-            $incident = AfisOfflineIncident::find($incidentId);
-            if (!$incident) continue;
-
-            $resolution = $this->resolutions[$incidentId] ?? null;
-            $comment    = $comment ?: null;
-            $resolution = $resolution ?: null;
-
-            if ($comment === $incident->comment && $resolution === $incident->resolution) {
-                continue;
+        foreach ($this->pendingComments + $this->pendingParties as $trackerId => $_) {
+            if ($this->persistPending((int) $trackerId, $this->pendingComments[$trackerId] ?? null, $this->pendingParties[$trackerId] ?? null)) {
+                $changed++;
             }
+        }
 
-            $before = ['comment' => $incident->comment, 'resolution' => $incident->resolution];
-            $incident->update(['comment' => $comment, 'resolution' => $resolution]);
-
-            AuditLog::create([
-                'event'       => 'offline_incident.updated',
-                'module'      => 'AfisPipeline',
-                'entity_type' => AfisOfflineIncident::class,
-                'entity_id'   => $incident->id,
-                'user_id'     => Auth::id(),
-                'ip_address'  => request()->ip(),
-                'user_agent'  => request()->userAgent(),
-                'created_at'  => now(),
-                'data'        => [
-                    'tracker_id'    => $incident->tracker_id,
-                    'tracker_label' => $incident->tracker?->label,
-                    'before'        => $before,
-                    'after'         => ['comment' => $comment, 'resolution' => $resolution],
-                ],
-            ]);
-
-            $changed++;
+        foreach ($this->comments as $incidentId => $comment) {
+            if ($this->persist((int) $incidentId, $comment, $this->actionParties[$incidentId] ?? null)) {
+                $changed++;
+            }
         }
 
         session()->flash('success', $changed > 0
@@ -130,96 +253,16 @@ class FleetStateDashboard extends Component
             : 'No changes to save.');
     }
 
-    // ─── Vehicle status notes (BT staff write, everyone on the page reads) ───
-
-    private function isStaff(): bool
+    /** Row Save button: save just this vehicle. */
+    public function saveVehicle(int $incidentId): void
     {
-        return (bool) Auth::user()?->isBtStaff();
-    }
+        $changed = $this->persist(
+            $incidentId,
+            $this->comments[$incidentId] ?? null,
+            $this->actionParties[$incidentId] ?? null
+        );
 
-    public function openNote(int $trackerId): void
-    {
-        abort_unless($this->isStaff(), 403);
-
-        if ($this->noteTrackerId === $trackerId) {
-            $this->closeNote();
-            return;
-        }
-
-        abort_unless(AfisTracker::where('client_id', $this->clientId)->whereKey($trackerId)->exists(), 404);
-
-        $this->noteTrackerId = $trackerId;
-        $this->noteTag = 'garage_repairs';
-        $this->noteText = $this->noteExpires = $this->noteError = '';
-    }
-
-    public function closeNote(): void
-    {
-        $this->noteTrackerId = null;
-        $this->noteError = '';
-    }
-
-    public function saveNote(): void
-    {
-        abort_unless($this->isStaff(), 403);
-        $this->noteError = '';
-
-        $text = trim($this->noteText);
-        if (!$this->noteTrackerId
-            || !AfisTracker::where('client_id', $this->clientId)->whereKey((int) $this->noteTrackerId)->exists()) {
-            $this->noteError = 'Vehicle not found.';
-            return;
-        }
-        if (!array_key_exists($this->noteTag, VehicleNote::TAGS)) {
-            $this->noteError = 'Choose a tag.';
-            return;
-        }
-        if (mb_strlen($text) < 3 || mb_strlen($text) > 500) {
-            $this->noteError = 'Write a note of 3 to 500 characters.';
-            return;
-        }
-        $expires = null;
-        if ($this->noteExpires !== '') {
-            try {
-                $expires = Carbon::parse($this->noteExpires)->toDateString();
-            } catch (\Throwable) {
-                $this->noteError = 'Invalid review-by date.';
-                return;
-            }
-            if ($expires < now()->timezone('Africa/Harare')->toDateString()) {
-                $this->noteError = 'The review-by date cannot be in the past.';
-                return;
-            }
-        }
-
-        // A new note replaces the previous active one (the old one stays as history)
-        VehicleNote::active()->where('tracker_id', $this->noteTrackerId)
-            ->update(['resolved_at' => now(), 'resolved_by' => Auth::id()]);
-
-        VehicleNote::create([
-            'tracker_id' => (int) $this->noteTrackerId,
-            'client_id'  => $this->clientId,
-            'tag'        => $this->noteTag,
-            'note'       => $text,
-            'expires_at' => $expires,
-            'created_by' => Auth::id(),
-        ]);
-
-        $this->closeNote();
-    }
-
-    public function resolveNote(int $noteId): void
-    {
-        abort_unless($this->isStaff(), 403);
-
-        VehicleNote::active()->where('client_id', $this->clientId)->whereKey($noteId)
-            ->update(['resolved_at' => now(), 'resolved_by' => Auth::id()]);
-    }
-
-    private function activeNotes(): \Illuminate\Support\Collection
-    {
-        // oldest first, so keyBy keeps the newest note per vehicle
-        return VehicleNote::active()->where('client_id', $this->clientId)->orderBy('id')->get()->keyBy('tracker_id');
+        session()->flash('success', $changed ? 'Vehicle updated.' : 'No changes to save for this vehicle.');
     }
 
     public function deleteReport(int $id): void
@@ -230,7 +273,7 @@ class FleetStateDashboard extends Component
         session()->flash('success', 'Report deleted.');
     }
 
-    private function buildVehicleStates($notes): array
+    private function buildVehicleStates(): array
     {
         $trackers = AfisTracker::where('client_id', $this->clientId)
             ->when($this->search, fn($q) => $q->where('label', 'like', "%{$this->search}%"))
@@ -245,6 +288,17 @@ class FleetStateDashboard extends Component
             ->open()
             ->get()
             ->keyBy('tracker_id');
+
+        // Incidents created after this page loaded: show their stored values, not blanks
+        foreach ($openIncidents as $inc) {
+            if (!array_key_exists($inc->id, $this->comments)) {
+                $this->comments[$inc->id]      = $inc->comment ?? '';
+                $this->actionParties[$inc->id] = $inc->action_party ?? '';
+            }
+        }
+
+        $userNames = \App\Models\User::whereIn('id', $openIncidents->pluck('triage_updated_by')->filter()->unique())
+            ->pluck('name', 'id');
 
         $groupIds = $trackers->pluck('navixy_group_id')->filter()->unique()->toArray();
         $groups   = AfisTrackerGroup::whereIn('navixy_group_id', $groupIds)
@@ -286,7 +340,11 @@ class FleetStateDashboard extends Component
                 'seconds'     => $seconds,
                 'bucket'      => $bucket,
                 'incident_id' => $incident?->id,
-                'note'        => $notes->get($tracker->id),
+                // blank counts as the defaults, so un-triaged vehicles stay in the Offline count
+                'comment'     => $incident?->comment ?: AfisOfflineIncident::DEFAULT_COMMENT,
+                'party'       => $incident?->action_party ?: AfisOfflineIncident::DEFAULT_PARTY,
+                'updated_at'  => $incident?->triage_updated_at?->timezone('Africa/Harare')->format('d M Y H:i'),
+                'updated_by'  => $incident?->triage_updated_by ? ($userNames[$incident->triage_updated_by] ?? null) : null,
             ];
         }
 
@@ -294,20 +352,16 @@ class FleetStateDashboard extends Component
             $vehicles = array_values(array_filter($vehicles, fn($v) => $v['status'] === $this->filter));
         }
 
-        if ($this->hideNoted) {
-            $vehicles = array_values(array_filter($vehicles, fn($v) => !($v['status'] === 'offline' && $v['note'])));
-        }
-
         if ($this->durationFilter !== '') {
             $vehicles = array_values(array_filter($vehicles, fn($v) => $v['bucket'] === $this->durationFilter));
         }
 
         if ($this->commentFilter !== '') {
-            $vehicles = array_values(array_filter($vehicles, function ($v) {
-                if (!$v['incident_id']) return false;
-                $incident = AfisOfflineIncident::find($v['incident_id']);
-                return $incident?->comment === $this->commentFilter;
-            }));
+            $vehicles = array_values(array_filter($vehicles, fn($v) => $v['status'] === 'offline' && $v['comment'] === $this->commentFilter));
+        }
+
+        if ($this->actionPartyFilter !== '') {
+            $vehicles = array_values(array_filter($vehicles, fn($v) => $v['status'] === 'offline' && $v['party'] === $this->actionPartyFilter));
         }
 
         usort($vehicles, function ($a, $b) {
@@ -347,20 +401,16 @@ class FleetStateDashboard extends Component
         return "{$days}d {$hours}h";
     }
 
-    public function render()
+    public function render(FleetStateCounter $counter)
     {
-        $allTrackers  = AfisTracker::where('client_id', $this->clientId)->get();
-        $totalCount   = $allTrackers->count();
-        $onlineCount  = $allTrackers->where('online_status', 'online')->count();
-        $offlineCount = $allTrackers->where('online_status', 'offline')->count();
+        // Offline = offline AND Functional (Active) AND Bantu Track; the rest is "excluded"
+        $counts        = $counter->forClients([$this->clientId]);
+        $totalCount    = $counts['total'];
+        $onlineCount   = $counts['online'];
+        $offlineCount  = $counts['offline'];
+        $excludedCount = $counts['excluded'];
 
-        $notes = $this->activeNotes();
-        $notedOfflineCount = $allTrackers->where('online_status', 'offline')->filter(fn($t) => $notes->has($t->id))->count();
-        $isStaff   = $this->isStaff();
-        $tags      = VehicleNote::TAGS;
-        $noteUsers = \App\Models\User::whereIn('id', $notes->pluck('created_by')->filter()->unique())->pluck('name', 'id');
-
-        $vehicles = $this->view === 'states' ? $this->buildVehicleStates($notes) : [];
+        $vehicles = $this->view === 'states' ? $this->buildVehicleStates() : [];
 
         // Always computed (cheap count query) so the tab badge is accurate
         // regardless of which tab is active — the full list below is still
@@ -374,9 +424,12 @@ class FleetStateDashboard extends Component
                 ->get()
             : collect();
 
+        $commentOptions = AfisOfflineIncident::COMMENTS;
+        $partyOptions   = AfisOfflineIncident::ACTION_PARTIES;
+
         return view('afisportal::livewire.fleet-state-dashboard.index', compact(
-            'vehicles', 'totalCount', 'onlineCount', 'offlineCount', 'reports', 'reportsCount',
-            'notedOfflineCount', 'isStaff', 'tags', 'noteUsers'
+            'vehicles', 'totalCount', 'onlineCount', 'offlineCount', 'excludedCount',
+            'reports', 'reportsCount', 'commentOptions', 'partyOptions'
         ));
     }
 }

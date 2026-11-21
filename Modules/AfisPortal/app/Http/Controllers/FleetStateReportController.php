@@ -12,7 +12,9 @@ use Modules\AfisPipeline\Models\AfisTracker;
 use Modules\AfisPipeline\Models\AfisTrackerGroup;
 use Modules\AfisPipeline\Models\AfisOfflineIncident;
 use Modules\AfisPipeline\Models\AfisOfflineReportFile;
+use Modules\AfisPortal\Services\FleetStateCounter;
 use Modules\AfisPortal\Services\OfflineReportPdfBuilder;
+use Barryvdh\DomPDF\Facade\Pdf;
 
 class FleetStateReportController extends Controller
 {
@@ -46,7 +48,7 @@ class FleetStateReportController extends Controller
         };
 
         $titleBase = $matchedTracker ? $matchedTracker->label : $client->name;
-        $title     = trim("{$titleBase} States Report" . ($durationSuffix ? " {$durationSuffix}" : ''));
+        $title     = trim("{$titleBase} States Report {$data['periodLabel']}" . ($durationSuffix ? " {$durationSuffix}" : ''));
 
         $data['isPdf'] = true;
         $pdfPath = app(OfflineReportPdfBuilder::class)->build($data, $titleBase);
@@ -59,6 +61,7 @@ class FleetStateReportController extends Controller
             'state_filter'    => $data['stateFilter'],
             'duration_filter' => $data['durationFilter'] ?: null,
             'comment_filter'  => $data['commentFilter'] ?: null,
+            'action_party_filter' => $data['actionPartyFilter'] ?: null,
             'search_term'     => $data['search'] ?: null,
             'generated_by'    => Auth::id(),
         ]);
@@ -78,13 +81,13 @@ class FleetStateReportController extends Controller
     private function prepareReportData(Request $request, int $clientId): array
     {
         $client = Client::findOrFail($clientId);
-        $from   = Carbon::parse($request->from ?? now()->subDays(30))->startOfDay();
-        $to     = Carbon::parse($request->to   ?? now())->endOfDay();
+        [$from, $to, $periodLabel] = $this->resolvePeriod($request);
 
-        $stateFilter    = $request->filter   ?? 'all';
-        $durationFilter = $request->duration ?? '';
-        $commentFilter  = $request->comment  ?? '';
-        $search         = $request->search   ?? '';
+        $stateFilter       = $request->filter   ?? 'all';
+        $durationFilter    = $request->duration ?? '';
+        $commentFilter     = $request->comment  ?? '';
+        $actionPartyFilter = $request->action_party ?? '';
+        $search            = $request->search   ?? '';
 
         $incidentRecords = AfisOfflineIncident::whereHas('tracker', function ($q) use ($clientId, $search) {
                 $q->where('client_id', $clientId);
@@ -102,7 +105,9 @@ class FleetStateReportController extends Controller
         $groupCache = AfisTrackerGroup::pluck('title', 'navixy_group_id');
         $now        = Carbon::now('Africa/Harare');
 
-        $incidents = $incidentRecords->map(function ($incident) use ($groupCache, $now) {
+        $userNames = \App\Models\User::whereIn('id', $incidentRecords->pluck('triage_updated_by')->filter()->unique())->pluck('name', 'id');
+
+        $incidents = $incidentRecords->map(function ($incident) use ($groupCache, $now, $userNames) {
             $tracker     = $incident->tracker;
             $wentOffline = $this->harareTime($incident, 'went_offline_at');
             $cameOnline  = $incident->came_online_at ? $this->harareTime($incident, 'came_online_at') : null;
@@ -118,8 +123,11 @@ class FleetStateReportController extends Controller
                 'severity'     => $this->severity($duration),
                 'bucket'       => $this->durationBucket($duration),
                 'is_open'      => $cameOnline === null,
-                'comment'      => $incident->comment,
-                'resolution'   => $incident->resolution,
+                // blank counts as the defaults (same rule as the dashboard panels)
+                'comment'      => $incident->comment ?: AfisOfflineIncident::DEFAULT_COMMENT,
+                'action_party' => $incident->action_party ?: AfisOfflineIncident::DEFAULT_PARTY,
+                'updated_at'   => $incident->triage_updated_at?->timezone('Africa/Harare')->format('d M Y H:i'),
+                'updated_by'   => $incident->triage_updated_by ? ($userNames[$incident->triage_updated_by] ?? null) : null,
             ];
         });
 
@@ -137,10 +145,15 @@ class FleetStateReportController extends Controller
             $incidents = $incidents->filter(fn($i) => $i['comment'] === $commentFilter);
         }
 
+        if ($actionPartyFilter !== '') {
+            $incidents = $incidents->filter(fn($i) => $i['action_party'] === $actionPartyFilter);
+        }
+
         $incidents = $incidents->sortByDesc('duration_sec')->values();
 
         $totalIncidents = $incidents->count();
         $stillOffline   = $incidents->where('is_open', true)->count();
+        $countedOffline = app(FleetStateCounter::class)->forClients([$clientId])['offline'];
         $avgDuration    = $totalIncidents > 0 ? $this->formatDuration((int) $incidents->avg('duration_sec')) : '—';
         $longestOffline = $totalIncidents > 0 ? $this->formatDuration((int) $incidents->max('duration_sec')) : '—';
 
@@ -164,9 +177,132 @@ class FleetStateReportController extends Controller
         return compact(
             'client', 'from', 'to', 'incidents',
             'totalIncidents', 'stillOffline', 'avgDuration', 'longestOffline',
-            'stateFilter', 'durationFilter', 'commentFilter', 'search',
-            'fleetSize', 'groupBreakdown'
+            'stateFilter', 'durationFilter', 'commentFilter', 'actionPartyFilter', 'search',
+            'fleetSize', 'groupBreakdown', 'periodLabel', 'countedOffline'
         );
+    }
+
+    /**
+     * Period for a report, in Harare time: daily (today), weekly (Mon-Sun),
+     * monthly (this month) or custom (from/to). With no period the old
+     * behaviour applies (from/to if given, otherwise the last 30 days).
+     *
+     * @return array{0:Carbon,1:Carbon,2:string} from, to, label
+     */
+    private function resolvePeriod(Request $request): array
+    {
+        $tz  = 'Africa/Harare';
+        $now = Carbon::now($tz);
+
+        switch ($request->period) {
+            case 'daily':
+                return [$now->copy()->startOfDay(), $now->copy()->endOfDay(), 'Daily'];
+            case 'weekly':
+                return [$now->copy()->startOfWeek(Carbon::MONDAY), $now->copy()->endOfWeek(Carbon::SUNDAY), 'Weekly'];
+            case 'monthly':
+                return [$now->copy()->startOfMonth(), $now->copy()->endOfMonth(), 'Monthly'];
+            case 'yearly':
+                return [$now->copy()->startOfYear(), $now->copy()->endOfYear(), 'Yearly'];
+        }
+
+        try {
+            $from = Carbon::parse($request->from ?? $now->copy()->subDays(30), $tz)->startOfDay();
+            $to   = Carbon::parse($request->to   ?? $now, $tz)->endOfDay();
+        } catch (\Throwable) {
+            $from = $now->copy()->subDays(30)->startOfDay();
+            $to   = $now->copy()->endOfDay();
+        }
+        if ($from->gt($to)) {
+            [$from, $to] = [$to->copy()->startOfDay(), $from->copy()->endOfDay()];
+        }
+
+        return [$from, $to, $request->period === 'custom' ? 'Custom' : 'Period'];
+    }
+
+    // ─── All-clients report (Daily / Weekly / Monthly / Yearly) ──────────────
+
+    public function overviewReport(Request $request)
+    {
+        $period = in_array($request->period, ['daily', 'weekly', 'monthly', 'yearly'], true) ? $request->period : 'monthly';
+        $request->merge(['period' => $period]);
+        [$from, $to, $periodLabel] = $this->resolvePeriod($request);
+
+        $clients   = Client::active()->orderBy('name')->get(['id', 'name']);
+        $clientIds = $clients->pluck('id')->all();
+
+        $counter  = app(FleetStateCounter::class);
+        $totals   = $counter->forClients($clientIds);
+        $byClient = $counter->byClient($clientIds);
+
+        // Incidents overlapping the period, per client
+        $inRange = AfisOfflineIncident::whereHas('tracker', fn($q) => $q->whereIn('client_id', $clientIds))
+            ->with('tracker:id,client_id')
+            ->where('went_offline_at', '<=', $to)
+            ->where(fn($q) => $q->whereNull('came_online_at')->orWhere('came_online_at', '>=', $from))
+            ->get();
+
+        $now = Carbon::now('Africa/Harare');
+        $perClient = $inRange->groupBy(fn($i) => $i->tracker?->client_id)->map(function ($rows) use ($now) {
+            $durations = $rows->map(function ($i) use ($now) {
+                $start = $this->harareTime($i, 'went_offline_at');
+                $end   = $i->came_online_at ? $this->harareTime($i, 'came_online_at') : $now;
+                return abs($start->diffInSeconds($end));
+            });
+            return ['incidents' => $rows->count(), 'avg' => $durations->avg(), 'longest' => $durations->max()];
+        });
+
+        $rows = $clients->map(function ($cl) use ($byClient, $perClient) {
+            $c = $byClient[$cl->id];
+            $p = $perClient[$cl->id] ?? null;
+            return [
+                'client'    => $cl->name,
+                'total'     => $c['total'],
+                'online'    => $c['online'],
+                'offline'   => $c['offline'],
+                'excluded'  => $c['excluded'],
+                'incidents' => $p['incidents'] ?? 0,
+                'avg'       => $p ? $this->formatDuration((int) $p['avg']) : '—',
+                'longest'   => $p ? $this->formatDuration((int) $p['longest']) : '—',
+            ];
+        })->filter(fn($r) => $r['total'] > 0)->values();
+
+        // Vehicles offline right now (all of them), counted ones first
+        $groupCache = AfisTrackerGroup::pluck('title', 'navixy_group_id');
+        $clientName = $clients->pluck('name', 'id');
+        $offlineNow = AfisTracker::whereIn('client_id', $clientIds)->where('online_status', 'offline')->get();
+        $open       = AfisOfflineIncident::open()->whereIn('tracker_id', $offlineNow->pluck('id'))->get()->keyBy('tracker_id');
+        $userNames  = \App\Models\User::whereIn('id', $open->pluck('triage_updated_by')->filter()->unique())->pluck('name', 'id');
+
+        $vehicles = $offlineNow->map(function ($t) use ($open, $groupCache, $clientName, $now, $userNames) {
+            $inc   = $open->get($t->id);
+            $since = $inc ? $this->harareTime($inc, 'went_offline_at') : null;
+            $sec   = $since ? abs($now->diffInSeconds($since)) : 0;
+            $comment = $inc?->comment ?: AfisOfflineIncident::DEFAULT_COMMENT;
+            $party   = $inc?->action_party ?: AfisOfflineIncident::DEFAULT_PARTY;
+
+            return [
+                'client'       => $clientName[$t->client_id] ?? '—',
+                'label'        => $t->label,
+                'group'        => $groupCache[$t->navixy_group_id] ?? '—',
+                'since'        => $since?->format('d M Y H:i') ?? '—',
+                'duration'     => $since ? $this->formatDuration($sec) : '—',
+                'duration_sec' => $sec,
+                'comment'      => $comment,
+                'action_party' => $party,
+                'updated_at'   => $inc?->triage_updated_at?->timezone('Africa/Harare')->format('d M Y H:i'),
+                'counted'      => $comment === AfisOfflineIncident::DEFAULT_COMMENT && $party === AfisOfflineIncident::DEFAULT_PARTY,
+            ];
+        })->sort(fn($a, $b) => [$b['counted'], $b['duration_sec']] <=> [$a['counted'], $a['duration_sec']])->values();
+
+        $data = [
+            'from' => $from, 'to' => $to, 'periodLabel' => $periodLabel,
+            'totals' => $totals, 'rows' => $rows, 'vehicles' => $vehicles,
+            'incidentsTotal' => $inRange->count(), 'isPdf' => true,
+        ];
+
+        return Pdf::loadView('afisportal::reports.offline-overview-report', $data)
+            ->setPaper('a4', 'landscape')
+            ->download('Fleet_States_Report_' . $periodLabel . '_' . now('Africa/Harare')->format('Ymd_His') . '.pdf');
     }
 
       /**

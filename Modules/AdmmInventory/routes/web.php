@@ -51,7 +51,6 @@ Route::middleware(['auth'])->prefix('admin/admm')->name('admin.admm.')->group(fu
     Route::get('/faulty-stock',      $stockTake('faulty', 'Faulty Devices & SIMs'))->name('faulty-stock.index');
     Route::view('/installations/new', 'admminventory::installations.create')->name('installations.create');
     Route::view('/installations', 'admminventory::installations.index')->name('installations.index');
-    Route::get('/vehicle-notes',     $soon('Vehicle Notes', 'E'))->name('vehicle-notes.index');
     
     });
 

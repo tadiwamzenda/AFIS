@@ -33,16 +33,12 @@ class FleetOverview extends Component
 
         $totals = [
             'clients'  => Client::active()->count(),
-            // client_id = 21 is MISCELLANEOUS (ghost/unmapped trackers) — excluded
-            // fleet-wide, same convention used in every report in this codebase.
-            'trackers' => AfisTracker::where('client_id', '!=', 21)->count(),
-            'trips'    => AfisTrip::where('client_id', '!=', 21)->count(),
-            // AfisEvent is an empty/unused table (confirmed: 0 rows). The real
-            // event data lives in AfisDeviceAlert, same table every report and
-            // FleetStateDashboard already use.
-            'events'   => \Modules\AfisPipeline\Models\AfisDeviceAlert::count(),
+            'trackers' => AfisTracker::count(),
+            'trips'    => AfisTrip::count(),
+            'events'   => AfisEvent::count(),
             'reports'  => AfisAiReport::completed()->count(),
         ];
+
         return view('afisportal::livewire.fleet-overview', compact('clients', 'totals'));
     }
 }
