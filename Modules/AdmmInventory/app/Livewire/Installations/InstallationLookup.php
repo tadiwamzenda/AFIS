@@ -40,6 +40,32 @@ class InstallationLookup extends Component
     public string $simOutcome = 'stock';
     public string $reason = '';
 
+    // Column sorting
+    public string $sortBy  = 'installed_at';   // client | imei | sim | installed_at | installer
+    public string $sortDir = 'desc';
+
+    private const SORT_SQL = [
+        'client'       => "(SELECT name FROM clients WHERE clients.id = adm_gps_devices.client_id)",
+        'imei'         => "adm_gps_devices.imei",
+        'sim'          => "(SELECT COALESCE(NULLIF(s.msisdn, ''), s.iccid) FROM adm_sim_cards s WHERE s.id = adm_gps_devices.sim_card_id)",
+        'installed_at' => "adm_gps_devices.installed_at",
+        'installer'    => "COALESCE((SELECT t.name FROM adm_technicians t WHERE t.id = adm_gps_devices.technician_id), NULLIF(adm_gps_devices.technician, ''))",
+    ];
+
+    public function sort(string $column): void
+    {
+        abort_unless(isset(self::SORT_SQL[$column]), 422);
+
+        if ($this->sortBy === $column) {
+            $this->sortDir = $this->sortDir === 'asc' ? 'desc' : 'asc';
+        } else {
+            $this->sortBy  = $column;
+            $this->sortDir = $column === 'installed_at' ? 'desc' : 'asc';   // dates: newest first; text: A-Z
+        }
+
+        $this->resetPage();
+    }
+
     public string $message = '';
     public string $error = '';
 
@@ -154,8 +180,14 @@ class InstallationLookup extends Component
             });
 
         // installed_at is a DATE column
+        $expr = self::SORT_SQL[$this->sortBy] ?? self::SORT_SQL['installed_at'];
+        $dir  = $this->sortDir === 'asc' ? 'ASC' : 'DESC';
+
+        // blanks always last, then the chosen order, then newest first as a stable tie-break
         return $this->applyPeriod($q, 'installed_at', true)
-            ->orderByDesc('installed_at')->orderByDesc('id');
+            ->orderByRaw("({$expr}) IS NULL")
+            ->orderByRaw("{$expr} {$dir}")
+            ->orderByDesc('adm_gps_devices.id');
     }
 
     public function exportCsv()

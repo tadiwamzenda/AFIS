@@ -1,4 +1,8 @@
-@php $fmt = fn ($c, $f = 'd M Y H:i') => $c ? $c->timezone('Africa/Harare')->format($f) : '—'; @endphp
+@php
+    $fmt   = fn ($c, $f = 'd M Y H:i') => $c ? $c->timezone('Africa/Harare')->format($f) : '—';
+    $arrow = fn ($col) => $sortBy === $col ? ($sortDir === 'asc' ? '▲' : '▼') : '↕';
+    $sortTh = fn ($col, $label) => '<th class="text-left px-3 py-2"><button type="button" wire:click="sort(\'' . $col . '\')" class="uppercase inline-flex items-center gap-1 hover:text-gray-800 ' . ($sortBy === $col ? 'text-gray-900 font-semibold' : '') . '">' . $label . ' <span class="' . ($sortBy === $col ? 'text-blue-600' : 'text-gray-300') . '">' . $arrow($col) . '</span></button></th>';
+@endphp
 <div class="space-y-4">
 
     @if($message)<div class="bg-green-50 border border-green-200 text-green-800 text-sm rounded-lg px-4 py-3">{{ $message }}</div>@endif
@@ -23,12 +27,12 @@
                 <tr>
                     <th class="text-left px-3 py-2">Registration</th>
                     <th class="text-left px-3 py-2">Fleet</th>
-                    <th class="text-left px-3 py-2">Client</th>
+                    {!! $sortTh('client', 'Client') !!}
                     <th class="text-left px-3 py-2">Make / model</th>
-                    <th class="text-left px-3 py-2">IMEI</th>
-                    <th class="text-left px-3 py-2">SIM</th>
-                    <th class="text-left px-3 py-2">Installed</th>
-                    <th class="text-left px-3 py-2">Installer</th>
+                    {!! $sortTh('imei', 'IMEI') !!}
+                    {!! $sortTh('sim', 'SIM') !!}
+                    {!! $sortTh('installed_at', 'Installed') !!}
+                    {!! $sortTh('installer', 'Installer') !!}
                     <th class="px-3 py-2"></th>
                 </tr>
             </thead>
